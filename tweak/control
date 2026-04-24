@@ -1,0 +1,9 @@
+Package: com.dqsg.apilogger
+Name: DQSGApiLogger
+Version: 0.1
+Architecture: iphoneos-arm64
+Description: Log DQSG API traffic (plaintext req/res)
+Maintainer: dev
+Author: dev
+Section: Tweaks
+Depends: mobilesubstrate

@@ -1,0 +1,69 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     '/Users/xuzhengda/Documents/workspace/dqsg/dqsgpatch/.theos/obj/debug/arm64/dqsgpatch.dylib'
+relocations:
+  - { offset: 0x1E, size: 0x8, addend: 0x0, symName: '+[PCGuardProtocol canInitWithRequest:]', symObjAddr: 0x0, symBinAddr: 0x4000, symSize: 0x16C }
+  - { offset: 0x2B, size: 0x8, addend: 0x0, symName: '-[PCGuardProtocol startLoading]', symObjAddr: 0x370, symBinAddr: 0x4370, symSize: 0x4CC }
+  - { offset: 0x50, size: 0x8, addend: 0x0, symName: _startLoading.authCount, symObjAddr: 0x9FB0, symBinAddr: 0xC218, symSize: 0x0 }
+  - { offset: 0xD6, size: 0x8, addend: 0x0, symName: '__logos_orig$_ungrouped$NSURLSessionConfiguration$protocolClasses', symObjAddr: 0xA000, symBinAddr: 0xC268, symSize: 0x0 }
+  - { offset: 0x690, size: 0x8, addend: 0x0, symName: '__logos_orig$_ungrouped$NSURLRequest$timeoutInterval', symObjAddr: 0xA008, symBinAddr: 0xC270, symSize: 0x0 }
+  - { offset: 0xA9E, size: 0x8, addend: 0x0, symName: _orig_fork, symObjAddr: 0x9FB8, symBinAddr: 0xC220, symSize: 0x0 }
+  - { offset: 0xADE, size: 0x8, addend: 0x0, symName: _orig_exit, symObjAddr: 0x9FC8, symBinAddr: 0xC230, symSize: 0x0 }
+  - { offset: 0xAFF, size: 0x8, addend: 0x0, symName: _orig__exit, symObjAddr: 0x9FD0, symBinAddr: 0xC238, symSize: 0x0 }
+  - { offset: 0xB14, size: 0x8, addend: 0x0, symName: _orig_abort, symObjAddr: 0x9FD8, symBinAddr: 0xC240, symSize: 0x0 }
+  - { offset: 0xB2F, size: 0x8, addend: 0x0, symName: _orig_kill, symObjAddr: 0x9FE0, symBinAddr: 0xC248, symSize: 0x0 }
+  - { offset: 0xB59, size: 0x8, addend: 0x0, symName: _orig_raise, symObjAddr: 0x9FE8, symBinAddr: 0xC250, symSize: 0x0 }
+  - { offset: 0xB7E, size: 0x8, addend: 0x0, symName: _orig_pthread_kill, symObjAddr: 0x9FF0, symBinAddr: 0xC258, symSize: 0x0 }
+  - { offset: 0xC3C, size: 0x8, addend: 0x0, symName: _orig_sysctl, symObjAddr: 0x9FC0, symBinAddr: 0xC228, symSize: 0x0 }
+  - { offset: 0xC9A, size: 0x8, addend: 0x0, symName: _orig_sigaction, symObjAddr: 0x9FF8, symBinAddr: 0xC260, symSize: 0x0 }
+  - { offset: 0xE3A, size: 0x8, addend: 0x0, symName: _g_unityBase, symObjAddr: 0xA010, symBinAddr: 0xC278, symSize: 0x0 }
+  - { offset: 0xE4E, size: 0x8, addend: 0x0, symName: _hook_GetStartupKey, symObjAddr: 0x165C, symBinAddr: 0x565C, symSize: 0xBC }
+  - { offset: 0xE75, size: 0x8, addend: 0x0, symName: _hook_GetStartupKey.logged, symObjAddr: 0xA060, symBinAddr: 0xC2C8, symSize: 0x0 }
+  - { offset: 0xEAA, size: 0x8, addend: 0x0, symName: _orig_GetStartupKey, symObjAddr: 0xA018, symBinAddr: 0xC280, symSize: 0x0 }
+  - { offset: 0xF4E, size: 0x8, addend: 0x0, symName: _g_reqSeq, symObjAddr: 0xA064, symBinAddr: 0xC2CC, symSize: 0x0 }
+  - { offset: 0xF64, size: 0x8, addend: 0x0, symName: _orig_EncryptRequest, symObjAddr: 0xA020, symBinAddr: 0xC288, symSize: 0x0 }
+  - { offset: 0x1000, size: 0x8, addend: 0x0, symName: _orig_DecryptResponse, symObjAddr: 0xA028, symBinAddr: 0xC290, symSize: 0x0 }
+  - { offset: 0x104B, size: 0x8, addend: 0x0, symName: _orig_RandomBytes, symObjAddr: 0xA030, symBinAddr: 0xC298, symSize: 0x0 }
+  - { offset: 0x1082, size: 0x8, addend: 0x0, symName: _orig_PublicEncrypt, symObjAddr: 0xA038, symBinAddr: 0xC2A0, symSize: 0x0 }
+  - { offset: 0x10B9, size: 0x8, addend: 0x0, symName: _orig_HmacSha1, symObjAddr: 0xA040, symBinAddr: 0xC2A8, symSize: 0x0 }
+  - { offset: 0x10F5, size: 0x8, addend: 0x0, symName: _orig_LoginCallback, symObjAddr: 0xA048, symBinAddr: 0xC2B0, symSize: 0x0 }
+  - { offset: 0x113D, size: 0x8, addend: 0x0, symName: _orig_XorBytes, symObjAddr: 0xA050, symBinAddr: 0xC2B8, symSize: 0x0 }
+  - { offset: 0x1179, size: 0x8, addend: 0x0, symName: _orig_SessionDecrypt, symObjAddr: 0xA058, symBinAddr: 0xC2C0, symSize: 0x0 }
+  - { offset: 0x1B81, size: 0x8, addend: 0x0, symName: '+[PCGuardProtocol canInitWithRequest:]', symObjAddr: 0x0, symBinAddr: 0x4000, symSize: 0x16C }
+  - { offset: 0x1BD3, size: 0x8, addend: 0x0, symName: '+[PCGuardProtocol canonicalRequestForRequest:]', symObjAddr: 0x16C, symBinAddr: 0x416C, symSize: 0x68 }
+  - { offset: 0x1C17, size: 0x8, addend: 0x0, symName: '-[PCGuardProtocol sendResponse:statusCode:]', symObjAddr: 0x1D4, symBinAddr: 0x41D4, symSize: 0x19C }
+  - { offset: 0x1C73, size: 0x8, addend: 0x0, symName: '-[PCGuardProtocol stopLoading]', symObjAddr: 0x83C, symBinAddr: 0x483C, symSize: 0x14 }
+  - { offset: 0x1CA5, size: 0x8, addend: 0x0, symName: __logosLocalCtor_0e63b11e, symObjAddr: 0x850, symBinAddr: 0x4850, symSize: 0x1B0 }
+  - { offset: 0x1CE9, size: 0x8, addend: 0x0, symName: _hook_fork, symObjAddr: 0xA00, symBinAddr: 0x4A00, symSize: 0x20 }
+  - { offset: 0x1D02, size: 0x8, addend: 0x0, symName: _hook_sysctl, symObjAddr: 0xA20, symBinAddr: 0x4A20, symSize: 0x100 }
+  - { offset: 0x1D9A, size: 0x8, addend: 0x0, symName: _hook_exit, symObjAddr: 0xB20, symBinAddr: 0x4B20, symSize: 0x50 }
+  - { offset: 0x1DBE, size: 0x8, addend: 0x0, symName: _hook__exit, symObjAddr: 0xB70, symBinAddr: 0x4B70, symSize: 0x38 }
+  - { offset: 0x1DE2, size: 0x8, addend: 0x0, symName: _hook_abort, symObjAddr: 0xBA8, symBinAddr: 0x4BA8, symSize: 0x2C }
+  - { offset: 0x1DF7, size: 0x8, addend: 0x0, symName: _hook_kill, symObjAddr: 0xBD4, symBinAddr: 0x4BD4, symSize: 0x80 }
+  - { offset: 0x1E2D, size: 0x8, addend: 0x0, symName: _hook_raise, symObjAddr: 0xC54, symBinAddr: 0x4C54, symSize: 0x14 }
+  - { offset: 0x1E55, size: 0x8, addend: 0x0, symName: _hook_pthread_kill, symObjAddr: 0xC68, symBinAddr: 0x4C68, symSize: 0x18 }
+  - { offset: 0x1E8B, size: 0x8, addend: 0x0, symName: _hook_sigaction, symObjAddr: 0xC80, symBinAddr: 0x4C80, symSize: 0xC8 }
+  - { offset: 0x1EEB, size: 0x8, addend: 0x0, symName: _onImageLoaded, symObjAddr: 0xD48, symBinAddr: 0x4D48, symSize: 0x21C }
+  - { offset: 0x1F2F, size: 0x8, addend: 0x0, symName: __logosLocalInit, symObjAddr: 0xF64, symBinAddr: 0x4F64, symSize: 0x78 }
+  - { offset: 0x1F72, size: 0x8, addend: 0x0, symName: '__logos_method$_ungrouped$NSURLSessionConfiguration$protocolClasses', symObjAddr: 0xFDC, symBinAddr: 0x4FDC, symSize: 0xD0 }
+  - { offset: 0x1FC4, size: 0x8, addend: 0x0, symName: '__logos_method$_ungrouped$NSURLRequest$timeoutInterval', symObjAddr: 0x10AC, symBinAddr: 0x50AC, symSize: 0x1BC }
+  - { offset: 0x201C, size: 0x8, addend: 0x0, symName: _installCrashHandlers, symObjAddr: 0x1268, symBinAddr: 0x5268, symSize: 0x68 }
+  - { offset: 0x2040, size: 0x8, addend: 0x0, symName: _pc_crash_handler, symObjAddr: 0x12D0, symBinAddr: 0x52D0, symSize: 0xC4 }
+  - { offset: 0x20B8, size: 0x8, addend: 0x0, symName: _swizzleAllJBSelectors, symObjAddr: 0x1394, symBinAddr: 0x5394, symSize: 0x1B4 }
+  - { offset: 0x2176, size: 0x8, addend: 0x0, symName: _hook_jailBroken_false, symObjAddr: 0x1548, symBinAddr: 0x5548, symSize: 0x5C }
+  - { offset: 0x21AC, size: 0x8, addend: 0x0, symName: _hook_isJailbroken_false, symObjAddr: 0x15A4, symBinAddr: 0x55A4, symSize: 0x5C }
+  - { offset: 0x21E2, size: 0x8, addend: 0x0, symName: _hook_isRooted_false, symObjAddr: 0x1600, symBinAddr: 0x5600, symSize: 0x5C }
+  - { offset: 0x2218, size: 0x8, addend: 0x0, symName: _hook_EncryptRequest, symObjAddr: 0x1718, symBinAddr: 0x5718, symSize: 0x1BC }
+  - { offset: 0x22B2, size: 0x8, addend: 0x0, symName: _hook_DecryptResponse, symObjAddr: 0x18D4, symBinAddr: 0x58D4, symSize: 0x100 }
+  - { offset: 0x2336, size: 0x8, addend: 0x0, symName: _hook_RandomBytes, symObjAddr: 0x19D4, symBinAddr: 0x59D4, symSize: 0x94 }
+  - { offset: 0x237E, size: 0x8, addend: 0x0, symName: _hook_PublicEncrypt, symObjAddr: 0x1A68, symBinAddr: 0x5A68, symSize: 0x68 }
+  - { offset: 0x23C6, size: 0x8, addend: 0x0, symName: _hook_HmacSha1, symObjAddr: 0x1AD0, symBinAddr: 0x5AD0, symSize: 0x4C }
+  - { offset: 0x240E, size: 0x8, addend: 0x0, symName: _hook_LoginCallback, symObjAddr: 0x1B1C, symBinAddr: 0x5B1C, symSize: 0x78 }
+  - { offset: 0x2461, size: 0x8, addend: 0x0, symName: _hook_XorBytes, symObjAddr: 0x1B94, symBinAddr: 0x5B94, symSize: 0xC4 }
+  - { offset: 0x24B8, size: 0x8, addend: 0x0, symName: _hook_SessionDecrypt, symObjAddr: 0x1C58, symBinAddr: 0x5C58, symSize: 0x68 }
+  - { offset: 0x2500, size: 0x8, addend: 0x0, symName: _logByteArray, symObjAddr: 0x1CC0, symBinAddr: 0x5CC0, symSize: 0xB8 }
+  - { offset: 0x2535, size: 0x8, addend: 0x0, symName: _hexFromBytes, symObjAddr: 0x1D78, symBinAddr: 0x5D78, symSize: 0x178 }
+  - { offset: 0x25A9, size: 0x8, addend: 0x0, symName: _il2cppStringToNS, symObjAddr: 0x1EF0, symBinAddr: 0x5EF0, symSize: 0x88 }
+  - { offset: 0x25D3, size: 0x8, addend: 0x0, symName: _hexFromBytesFull, symObjAddr: 0x1F78, symBinAddr: 0x5F78, symSize: 0x114 }
+  - { offset: 0x2638, size: 0x8, addend: 0x0, symName: _writeByteArrayToTmp, symObjAddr: 0x208C, symBinAddr: 0x608C, symSize: 0x158 }
+...

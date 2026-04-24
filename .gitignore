@@ -1,0 +1,26 @@
+.dqsg_accounts.json
+.DS_Store
+__pycache__/
+*.pyc
+
+# Local reverse-engineering / build artifacts
+1.ipa
+102/
+UnityFramework
+UnityFramework.i64
+UnityFramework.id0
+UnityFramework.id1
+UnityFramework.id2
+UnityFramework.nam
+UnityFramework.til
+global-metadata.dat
+il2cpp_output/
+chlz/
+req/
+res/
+iosconsole/
+protoc
+
+# Local tool state
+.agent/
+.claude/

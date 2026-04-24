@@ -1,0 +1,9 @@
+Package: com.pc.dqsgpatch
+Name: DQSG Patch
+Version: 0.0.1
+Architecture: iphoneos-arm64
+Description: DQSG jailbreak detection bypass
+Maintainer: pc
+Author: pc
+Section: Tweaks
+Depends: mobilesubstrate

@@ -1,0 +1,26 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     '/Users/xuzhengda/Documents/workspace/dqsg/tweak/.theos/obj/debug/arm64/DQSGApiLogger.dylib'
+relocations:
+  - { offset: 0x1E, size: 0x8, addend: 0x0, symName: __ZL24_logosLocalCtor_fe62b06biPPcS0_, symObjAddr: 0x0, symBinAddr: 0x4000, symSize: 0x28C }
+  - { offset: 0x3E, size: 0x8, addend: 0x0, symName: __ZL24_logosLocalCtor_fe62b06biPPcS0_, symObjAddr: 0x0, symBinAddr: 0x4000, symSize: 0x28C }
+  - { offset: 0x1B2, size: 0x8, addend: 0x0, symName: __ZL9hook_CallPvS_S_bbbbS_, symObjAddr: 0x368, symBinAddr: 0x4368, symSize: 0x200 }
+  - { offset: 0x2C6, size: 0x8, addend: 0x0, symName: __ZL9orig_Call, symObjAddr: 0x2F10, symBinAddr: 0x10030, symSize: 0x0 }
+  - { offset: 0x315, size: 0x8, addend: 0x0, symName: __ZL9hook_RespPvS_, symObjAddr: 0x568, symBinAddr: 0x4568, symSize: 0x208 }
+  - { offset: 0x3F3, size: 0x8, addend: 0x0, symName: __ZL9orig_Resp, symObjAddr: 0x2F18, symBinAddr: 0x10038, symSize: 0x0 }
+  - { offset: 0x41C, size: 0x8, addend: 0x0, symName: __ZL10hook_LoginPvxS_S_, symObjAddr: 0x770, symBinAddr: 0x4770, symSize: 0x178 }
+  - { offset: 0x4E8, size: 0x8, addend: 0x0, symName: __ZL10orig_Login, symObjAddr: 0x2F20, symBinAddr: 0x10040, symSize: 0x0 }
+  - { offset: 0x52D, size: 0x8, addend: 0x0, symName: __ZL8hook_XorPvS_S_, symObjAddr: 0x8E8, symBinAddr: 0x48E8, symSize: 0x24C }
+  - { offset: 0x624, size: 0x8, addend: 0x0, symName: __ZL8orig_Xor, symObjAddr: 0x2F28, symBinAddr: 0x10048, symSize: 0x0 }
+  - { offset: 0x6E1, size: 0x8, addend: 0x0, symName: __ZL8findBasePKc, symObjAddr: 0x28C, symBinAddr: 0x428C, symSize: 0x88 }
+  - { offset: 0x729, size: 0x8, addend: 0x0, symName: ___os_log_helper_16_0_0, symObjAddr: 0x314, symBinAddr: 0x4314, symSize: 0x1C }
+  - { offset: 0x749, size: 0x8, addend: 0x0, symName: ___os_log_helper_16_0_1_8_0, symObjAddr: 0x330, symBinAddr: 0x4330, symSize: 0x38 }
+  - { offset: 0x775, size: 0x8, addend: 0x0, symName: __Z6strstrB8ne200100Ua9enable_ifIXLb1EEEPKcS0_, symObjAddr: 0xB34, symBinAddr: 0x4B34, symSize: 0x2C }
+  - { offset: 0x7AF, size: 0x8, addend: 0x0, symName: __ZL9il2cppStrPv, symObjAddr: 0xB60, symBinAddr: 0x4B60, symSize: 0x84 }
+  - { offset: 0x7F7, size: 0x8, addend: 0x0, symName: __ZL10hexFromArrPvi, symObjAddr: 0xBE4, symBinAddr: 0x4BE4, symSize: 0x1DC }
+  - { offset: 0x8AF, size: 0x8, addend: 0x0, symName: ___os_log_helper_16_2_2_8_66_8_66, symObjAddr: 0xDC0, symBinAddr: 0x4DC0, symSize: 0x50 }
+  - { offset: 0x8E7, size: 0x8, addend: 0x0, symName: __ZL12il2cppArrLenPv, symObjAddr: 0xE10, symBinAddr: 0x4E10, symSize: 0x38 }
+  - { offset: 0x913, size: 0x8, addend: 0x0, symName: __ZL13il2cppArrDataPv, symObjAddr: 0xE48, symBinAddr: 0x4E48, symSize: 0x38 }
+  - { offset: 0x93F, size: 0x8, addend: 0x0, symName: ___os_log_helper_16_2_2_8_0_8_66, symObjAddr: 0xE80, symBinAddr: 0x4E80, symSize: 0x50 }
+  - { offset: 0x977, size: 0x8, addend: 0x0, symName: ___os_log_helper_16_2_3_8_66_8_66_8_66, symObjAddr: 0xED0, symBinAddr: 0x4ED0, symSize: 0x68 }
+...
