@@ -24,3 +24,8 @@ protoc
 # Local tool state
 .agent/
 .claude/
+
+# Theos build artifacts
+*/.theos/
+*/packages/
+*.deb
