@@ -3197,12 +3197,26 @@ _HD_STAGE_IDS = {
     },
 }
 
-_XL_STAGE_MASTER_ID = 30161101
-_XL_START_BODY = bytes.fromhex(
-    "cd38cc01010000000001cd38cc013b400a007f1300000000000089e5a6be9d0100004ff9babb02000000"
-)
-_XL_FETCH_MULTI_DATA_BODY = bytes.fromhex("cd38cc0100020000007b7d")
-_XL_TEMPLATE_FILE = "stage_30161101_xl.bin"
+_XL_CONFIGS = {
+    1: {
+        "stage": 30161101,
+        "template_stage": 30161101,
+        "template_file": "stage_30161101_xl.bin",
+        "start_body": bytes.fromhex(
+            "cd38cc01010000000001cd38cc013b400a007f1300000000000089e5a6be9d0100004ff9babb02000000"
+        ),
+        "fetch_multi_data_body": bytes.fromhex("cd38cc0100020000007b7d"),
+    },
+    2: {
+        "stage": 30161201,
+        "template_stage": 30161101,
+        "template_file": "stage_30161101_xl.bin",
+        "start_body": bytes.fromhex(
+            "3139cc010100000000013139cc013b400a007f1300000000000089e5a6be9d0100004ff9babb02000000"
+        ),
+        "fetch_multi_data_body": bytes.fromhex("3139cc0100020000007b7d"),
+    },
+}
 
 
 def cmd_yc(args):
@@ -3396,10 +3410,15 @@ def cmd_xl(args):
     from .battle_templates import load_battle_result
 
     client, record = _load_client_for_account(args)
+    level = int(args.level)
     times = args.times
+    config = _XL_CONFIGS.get(level)
+    if config is None:
+        raise SystemExit(f"Unknown xl level: {level}. Available: {sorted(_XL_CONFIGS)}")
+    stage_id = config["stage"]
 
     print(f"=== account {_account_ref(record)} ===")
-    print(f"=== 协力 (XL) ×{times} ===")
+    print(f"=== 协力 (XL {level}) ×{times} ===")
 
     print("\n=== masterdata/get_version ===")
     resp = client.masterdata_get_version()
@@ -3413,21 +3432,22 @@ def cmd_xl(args):
     for idx in range(1, times + 1):
         print(f"\n=== XL run {idx}/{times} ===")
 
-        print(f"\n=== matching_room/fetch_multi_data ({_XL_STAGE_MASTER_ID}) ===")
-        resp = client.matching_room_fetch_multi_data_raw(_XL_FETCH_MULTI_DATA_BODY)
+        print(f"\n=== matching_room/fetch_multi_data ({stage_id}) ===")
+        resp = client.matching_room_fetch_multi_data_raw(config["fetch_multi_data_body"])
         _check(resp, "matching_room/fetch_multi_data")
 
-        print(f"\n=== in_game/start ({_XL_STAGE_MASTER_ID}) ===")
-        resp = client.in_game_start_raw(_XL_START_BODY)
+        print(f"\n=== in_game/start ({stage_id}) ===")
+        resp = client.in_game_start_raw(config["start_body"])
         _check(resp, "in_game/start")
 
-        print(f"\n=== in_game/result ({_XL_STAGE_MASTER_ID}) ===")
+        print(f"\n=== in_game/result ({stage_id}) ===")
         resp = _submit_in_game_result_with_resume(
             client,
             build_result_body=lambda sid: load_battle_result(
-                stage_master_id=_XL_STAGE_MASTER_ID,
+                stage_master_id=stage_id,
+                template_stage_id=config["template_stage"],
                 in_game_session_id=sid,
-                template_file=_XL_TEMPLATE_FILE,
+                template_file=config["template_file"],
             ),
         )
         _check(resp, "in_game/result")
@@ -3435,11 +3455,11 @@ def cmd_xl(args):
     saved = _save_client_account(
         client,
         args,
-        last_command="xl",
+        last_command=f"xl-{level}",
         snapshot=login_snapshot,
     )
     print(f"\n{'='*50}")
-    print(f"协力 XL complete. Runs: {times}")
+    print(f"协力 XL {level} complete. Runs: {times}")
     _print_saved_account(saved, _store_path(args))
     print("=" * 50)
 
@@ -3717,9 +3737,14 @@ def build_parser():
 
     xl_parser = subparsers.add_parser(
         "xl",
-        help="Run the recorded 协力 stage using captured start/result bodies",
+        help="Run recorded 协力 stages using captured start/result bodies",
     )
     xl_parser.add_argument("--account", help="Saved account user_id, label, or latest")
+    xl_parser.add_argument(
+        "level",
+        choices=["1", "2"],
+        help="协力 stage slot",
+    )
     xl_parser.add_argument(
         "--times",
         type=int,
