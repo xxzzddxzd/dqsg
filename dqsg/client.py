@@ -78,6 +78,15 @@ def _http_status_text(status_code: int) -> str:
     text = f"HTTP {status_code}"
     return _color(text, _GREEN if status_code == 200 else _RED)
 
+
+def _request_param_text(plaintext: bytes) -> str:
+    if not plaintext:
+        return "-"
+    if len(plaintext) <= 16:
+        return plaintext.hex()
+    return f"<{len(plaintext)} bytes>"
+
+
 # ==========================================================================
 # Account credentials
 # ==========================================================================
@@ -202,7 +211,7 @@ class DQSGClient:
         path = self._build_path(endpoint, with_user=with_user, with_time=with_time)
         url = BASE_URL + path
         encrypted = encrypt_request(key, path, plaintext)
-        print(f"  -> POST {path[:120]}")
+        line = f"=== /{endpoint} {_request_param_text(plaintext)}"
 
         # Save decrypted request body
         safe_endpoint = endpoint.replace("/", "_")
@@ -223,21 +232,20 @@ class DQSGClient:
             except (requests.exceptions.ConnectionError, requests.exceptions.SSLError) as exc:
                 last_exc = exc
                 if attempt >= 3:
+                    print(f"{line} req:{type(exc).__name__}")
                     raise
-                print(
-                    f"  !! transport error on {endpoint} attempt {attempt}/3: "
-                    f"{type(exc).__name__}; retrying"
-                )
+                line += f" req:{type(exc).__name__}(retry)"
                 time.sleep(1.0)
         else:
             raise last_exc
         if resp.status_code != 200:
-            print(f"  <- {_http_status_text(resp.status_code)}: {resp.text[:200]}")
+            retry_tag = "(retry)" if resp.status_code >= 500 else ""
+            print(f"{line} req:200 res:{resp.status_code}{retry_tag}")
             resp.raise_for_status()
         decrypted = decrypt_response(key, path, resp.content)
         self.last_response_raw = decrypted
         self.last_response_endpoint = endpoint
-        print(f"  <- {len(decrypted)} bytes decrypted")
+        print(f"{line} req:200 res:{resp.status_code}")
 
         # Save decrypted response body
         os.makedirs("res", exist_ok=True)
