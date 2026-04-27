@@ -138,12 +138,22 @@ def _store_path(args) -> str:
     return args.accounts_file
 
 
+def _debug_enabled(args) -> bool:
+    return bool(getattr(args, "debug", False))
+
+
+def _configure_client_debug(client: DQSGClient, args):
+    client.debug = _debug_enabled(args)
+    return client
+
+
 def _account_ref(record: dict) -> str:
     return record.get("label") or str(record["user_id"])
 
 
 def _create_saved_account(args) -> dict:
     client = DQSGClient.new_account()
+    _configure_client_debug(client, args)
     print("\n=== masterdata/get_version ===")
     resp = client.masterdata_get_version()
     _check(resp, "masterdata/get_version")
@@ -201,7 +211,9 @@ def _save_client_account(client: DQSGClient, args, *, progress=None, last_comman
 
 def _load_client_for_account(args):
     record = _resolve_account_arg_or_prompt(args)
-    return DQSGClient.from_account_record(record), record
+    client = DQSGClient.from_account_record(record)
+    _configure_client_debug(client, args)
+    return client, record
 
 
 def _print_saved_account(record: dict, store_path: str):
@@ -949,11 +961,12 @@ def _submit_in_game_result_with_resume(
             last_exc = exc
             if attempt >= max_attempts:
                 break
-            print(
-                f"  [resume] in_game/result hit {_color('HTTP 500', _RED)} "
-                f"on attempt {attempt}/{max_attempts}, "
-                "sleeping 2s before refreshing InGameSessionId"
-            )
+            if client.debug:
+                print(
+                    f"  [resume] in_game/result hit {_color('HTTP 500', _RED)} "
+                    f"on attempt {attempt}/{max_attempts}, "
+                    "sleeping 2s before refreshing InGameSessionId"
+                )
             time.sleep(2)
             login_resp = client.login_login(first_login=False)
             _check(login_resp, "login/login resume")
@@ -986,22 +999,25 @@ def _run_scored_dungeon(client, stage_master_id, build_result_body, login_resp=N
         existing_session_id = login_resp.get("InGameSessionId")
 
     if existing_session_id:
-        print(
-            f"  [resume] existing InGameSessionId={existing_session_id}, "
-            "skipping in_game/start"
-        )
+        if client.debug:
+            print(
+                f"  [resume] existing InGameSessionId={existing_session_id}, "
+                "skipping in_game/start"
+            )
     else:
-        print(f"\n=== in_game/start ({stage_master_id}) ===")
+        if client.debug:
+            print(f"\n=== in_game/start ({stage_master_id}) ===")
         try:
             resp = client.in_game_start(stage_master_id, deck_index=1)
             _check(resp, "in_game/start")
         except requests.HTTPError as exc:
             if exc.response is None or exc.response.status_code != 500:
                 raise
-            print(
-                f"  [resume] in_game/start hit {_color('HTTP 500', _RED)}, "
-                "refreshing InGameSessionId"
-            )
+            if client.debug:
+                print(
+                    f"  [resume] in_game/start hit {_color('HTTP 500', _RED)}, "
+                    "refreshing InGameSessionId"
+                )
             login_resp = client.login_login(first_login=False)
             _check(login_resp, "login/login resume")
             existing_session_id = login_resp.get("InGameSessionId")
@@ -1010,7 +1026,8 @@ def _run_scored_dungeon(client, stage_master_id, build_result_body, login_resp=N
                     "resume login did not return InGameSessionId"
                 ) from exc
 
-    print(f"\n=== in_game/result ({stage_master_id}) ===")
+    if client.debug:
+        print(f"\n=== in_game/result ({stage_master_id}) ===")
     resp = _submit_in_game_result_with_resume(
         client,
         build_result_body=build_result_body,
@@ -3513,6 +3530,11 @@ def build_parser():
         "--accounts-file",
         default=str(ACCOUNT_STORE_PATH),
         help="Path to the saved account JSON file",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Show detailed request/session/retry logs",
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)

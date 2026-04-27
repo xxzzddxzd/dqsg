@@ -114,6 +114,7 @@ class DQSGClient:
     def __init__(self, user_id=None, stored_key=None, client_uuid=None):
         self.session = requests.Session()
         self.session.verify = False
+        self.debug = bool(os.environ.get("DQSG_DEBUG"))
         self.session_key = STARTUP_KEY
         self.user_id = int(user_id) if user_id is not None else ACCT2_USER_ID
         if stored_key is None:
@@ -187,6 +188,10 @@ class DQSGClient:
         if self.login_key:
             record["login_key"] = self.login_key.hex()
         return record
+
+    def debug_log(self, message: str):
+        if self.debug:
+            print(message)
 
     # ------------------------------------------------------------------
     # Transport
@@ -265,7 +270,7 @@ class DQSGClient:
         data = self._call("masterdata/get_version", b"")
         resp = parse_masterdata_response(data)
         self.mv = resp["version"]
-        print(f"  <- version={resp['version']}, revision={resp['revision']}")
+        self.debug_log(f"  <- version={resp['version']}, revision={resp['revision']}")
         return resp
 
     def login_startup(self):
@@ -273,14 +278,14 @@ class DQSGClient:
         mask = rsa_public_encrypt(startup_random)
         terminal_id = str(uuid.uuid4()).upper()
         req = build_startup_request(mask, self.client_uuid, terminal_id)
-        print(f"  clientUuid={self.client_uuid}")
-        print(f"  terminalId={terminal_id}")
-        print(f"  startupRandom={startup_random.hex()[:16]}...")
+        self.debug_log(f"  clientUuid={self.client_uuid}")
+        self.debug_log(f"  terminalId={terminal_id}")
+        self.debug_log(f"  startupRandom={startup_random.hex()[:16]}...")
         data = self._call("login/startup", req, key=STARTUP_KEY)
         resp = parse_startup_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
-        print(f"  <- UserId={resp['UserId']}")
-        print(f"  <- AuthorizationKey={resp['AuthorizationKey'].hex()[:16]}...")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- UserId={resp['UserId']}")
+        self.debug_log(f"  <- AuthorizationKey={resp['AuthorizationKey'].hex()[:16]}...")
 
         self.user_id = resp["UserId"]
         auth_key = resp["AuthorizationKey"]
@@ -289,8 +294,8 @@ class DQSGClient:
         self.authorization_key = auth_key
         self.stored_key = xor_bytes(startup_random, auth_key)
         self.login_key = xor_bytes(self.stored_key, STARTUP_KEY)
-        print(f"  <- storedKey={self.stored_key.hex()[:16]}...")
-        print(f"  <- loginKey={self.login_key.hex()[:16]}...")
+        self.debug_log(f"  <- storedKey={self.stored_key.hex()[:16]}...")
+        self.debug_log(f"  <- loginKey={self.login_key.hex()[:16]}...")
 
         return {
             "user_id": self.user_id,
@@ -310,57 +315,58 @@ class DQSGClient:
             random_bytes = os.urandom(32)
             mask = rsa_public_encrypt(random_bytes)
             req = build_login_request(1, mask, self.client_uuid)
-            print(f"  [probe] sending auth_count=1 to learn server count...")
+            self.debug_log(f"  [probe] sending auth_count=1 to learn server count...")
             data = self._call("login/login", req, key=self.login_key,
                               with_user=True, with_time=False)
             r = BytesReader(data)
             r.read_int()  # status
             server_count = r.read_int()
             r.read_bytes()  # empty session key
-            print(f"  [probe] server count={server_count}")
+            self.debug_log(f"  [probe] server count={server_count}")
             auth_count = server_count + 1
 
         random_bytes = os.urandom(32)
         mask = rsa_public_encrypt(random_bytes)
         req = build_login_request(auth_count, mask, self.client_uuid)
-        print(f"  [login] sending auth_count={auth_count}")
-        print(f"  loginKey={self.login_key.hex()[:16]}...")
+        self.debug_log(f"  [login] sending auth_count={auth_count}")
+        self.debug_log(f"  loginKey={self.login_key.hex()[:16]}...")
         data = self._call("login/login", req, key=self.login_key,
                           with_user=True, with_time=True)
         self.last_login_response_raw = data
         resp = parse_login_response(data)
-        print(f"  <- {_status_text(resp['_status'])}, AuthCount={resp['AuthorizationCount']}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}, AuthCount={resp['AuthorizationCount']}")
         if resp["SessionKey"] and len(resp["SessionKey"]) == 32:
             self.session_key = xor_bytes(random_bytes, resp["SessionKey"])
-            print(f"  <- sessionKey={self.session_key.hex()[:16]}...")
-            print(f"  <- ClientId={resp.get('ClientId', '?')}")
-            print(f"  <- InGameSessionId={resp.get('InGameSessionId')}")
-            print(f"  <- AssetCdnUrl={resp.get('AssetCdnUrl', '?')}")
+            self.debug_log(f"  <- sessionKey={self.session_key.hex()[:16]}...")
+            self.debug_log(f"  <- ClientId={resp.get('ClientId', '?')}")
+            self.debug_log(f"  <- InGameSessionId={resp.get('InGameSessionId')}")
+            self.debug_log(f"  <- AssetCdnUrl={resp.get('AssetCdnUrl', '?')}")
         else:
-            print(f"  <- WARNING: no valid SessionKey (len={len(resp['SessionKey'])})")
+            self.debug_log(f"  <- WARNING: no valid SessionKey (len={len(resp['SessionKey'])})")
         return resp
 
     def terms_get(self):
         data = self._call("terms/get_terms_eu", b"",
                           key=STARTUP_KEY, with_user=True, with_time=True)
-        print(f"  <- {len(data)} bytes (HTML terms)")
+        self.debug_log(f"  <- {len(data)} bytes (HTML terms)")
         return data
 
     def terms_agree(self):
         req = build_terms_agree_request()
         data = self.call_authenticated("terms/terms_agree_eu", req)
-        print(f"  <- {len(data)} bytes")
+        self.debug_log(f"  <- {len(data)} bytes")
         return data
 
     def home_fetch_info(self):
         req = build_home_info_request()
         data = self.call_authenticated("home/fetch_info", req)
         resp = parse_home_info_response(data)
-        print(f"  <- {_status_text(resp['_status'])}, PresentCount={resp['PresentCount']}")
-        notice = resp["Notice"]
-        print(f"  <- {len(notice['MandatoryNotices'])} mandatory, {len(notice['HomeBannerNotices'])} banners")
-        for b in notice["HomeBannerNotices"]:
-            print(f"     [{b['InformationId']}] {b['TitleText']}  ({b['StartAt']} ~ {b['EndAt']})")
+        if self.debug:
+            print(f"  <- {_status_text(resp['_status'])}, PresentCount={resp['PresentCount']}")
+            notice = resp["Notice"]
+            print(f"  <- {len(notice['MandatoryNotices'])} mandatory, {len(notice['HomeBannerNotices'])} banners")
+            for b in notice["HomeBannerNotices"]:
+                print(f"     [{b['InformationId']}] {b['TitleText']}  ({b['StartAt']} ~ {b['EndAt']})")
         return resp
 
     def delete_account(self):
