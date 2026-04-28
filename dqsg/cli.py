@@ -2866,6 +2866,8 @@ def _story_stage_master_id(chapter: int, stage: int, *, hard: bool) -> int:
         # hard flag shifted by +100, even for irregular chapter-2 mappings like
         # 10102151 -> 10102251.
         return _story_stage_master_id(chapter, stage, hard=False) + 100
+    if chapter >= 4:
+        return 100100 + chapter * 1000 + stage
     return int(f"101{chapter:02d}1{stage:02d}")
 
 
@@ -2879,7 +2881,7 @@ def _resolve_story_template_stage_id(chapter: int, stage: int, *, hard: bool) ->
     from .battle_templates import battle_template_exists
 
     default_stage = _story_default_template_stage(chapter)
-    if chapter == 4:
+    if chapter >= 4:
         candidates = [_story_stage_master_id(4, 1, hard=False)]
     else:
         candidates = [_story_stage_master_id(chapter, default_stage, hard=hard)]
