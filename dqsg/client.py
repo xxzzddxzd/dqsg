@@ -24,6 +24,7 @@ from .parsers import (
     build_metric_low_fps_request, build_metric_device_request,
     build_in_game_start_request, build_in_game_result_request,
     parse_in_game_result_response,
+    parse_in_game_stage_skip_response,
     build_gacha_draw_request, parse_gacha_draw_response,
     parse_gacha_fetch_list_response,
     GACHA_METAL_10, GACHA_NORMAL_10, GACHA_TUTORIAL,
@@ -502,7 +503,7 @@ class DQSGClient:
         w.write_int(stage_master_id)
         w.write_int(count)
         data = self.call_authenticated("in_game/skip_stage", w.to_bytes())
-        resp = parse_user_model_response(data)
+        resp = parse_in_game_stage_skip_response(data)
         self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 

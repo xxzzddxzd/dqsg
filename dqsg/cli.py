@@ -984,17 +984,27 @@ def _submit_in_game_result_with_resume(
 
 
 def _receive_in_game_result_ad_chance(client: DQSGClient, result_resp: dict):
-    stage_result = result_resp.get("StageResult") or {}
+    stage_results = []
+    if result_resp.get("StageResult"):
+        stage_results.append(result_resp["StageResult"])
+    stage_results.extend(result_resp.get("StageResultList") or [])
+
+    for idx, stage_result in enumerate(stage_results, 1):
+        _receive_stage_result_ad_chance(client, stage_result, idx if len(stage_results) > 1 else None)
+
+
+def _receive_stage_result_ad_chance(client: DQSGClient, stage_result: dict, index: int = None):
     orb_master_id = stage_result.get("AdChanceOrbMasterId")
     point_card_amount = stage_result.get("AdChancePointCardPointAmount")
+    suffix = f" #{index}" if index is not None else ""
 
     if orb_master_id is not None:
-        print(f"\n=== advertisement/receive_reward_ad_chance_orb ({orb_master_id}) ===")
+        print(f"\n=== advertisement/receive_reward_ad_chance_orb{suffix} ({orb_master_id}) ===")
         resp = client.advertisement_receive_reward_ad_chance_orb(orb_master_id)
         _check(resp, "advertisement/receive_reward_ad_chance_orb")
 
     if point_card_amount is not None:
-        print(f"\n=== advertisement/receive_reward_chance_point_card_point ({point_card_amount}) ===")
+        print(f"\n=== advertisement/receive_reward_chance_point_card_point{suffix} ({point_card_amount}) ===")
         resp = client.advertisement_receive_reward_chance_point_card_point()
         _check(resp, "advertisement/receive_reward_chance_point_card_point")
 
@@ -3526,6 +3536,7 @@ def cmd_yc(args):
         print(f"\n=== in_game/skip_stage ({stage_id}, count={skip_count}) ===")
         resp = client.in_game_skip_stage(stage_id, count=skip_count)
         _check(resp, "in_game/skip_stage")
+        _receive_in_game_result_ad_chance(client, resp)
 
         saved = _save_client_account(
             client, args,

@@ -284,10 +284,7 @@ def _read_list(r: BytesReader, read_item) -> list[dict]:
     return [read_item(r) for _ in range(r.read_int())]
 
 
-def parse_in_game_result_response(data: bytes) -> dict:
-    """Parse InGameResultResponse enough to detect ad chance rewards."""
-    r = BytesReader(data)
-    result = {"_status": r.read_int()}
+def _read_stage_result(r: BytesReader) -> dict:
     stage_result = {
         "Gold": r.read_int(),
         "StyleExp": r.read_int(),
@@ -300,8 +297,29 @@ def parse_in_game_result_response(data: bytes) -> dict:
         "AdChancePointCardPointAmount": r.read_nullable_int(),
         "IsPostedPresent": r.read_bool(),
     }
-    result["StageResult"] = stage_result
+    stage_result["EventSurvival"] = None
+    if r.read_bool():
+        stage_result["EventSurvival"] = {"_unparsed": True}
+        raise ValueError("StageResultEventSurvival parsing is not implemented")
+    stage_result["CampaignDropContentList"] = _read_list(r, _read_content)
+    return stage_result
+
+
+def parse_in_game_result_response(data: bytes) -> dict:
+    """Parse InGameResultResponse enough to detect ad chance rewards."""
+    r = BytesReader(data)
+    result = {"_status": r.read_int()}
+    result["StageResult"] = _read_stage_result(r)
     result["_remaining_after_stage_result"] = r.remaining()
+    return result
+
+
+def parse_in_game_stage_skip_response(data: bytes) -> dict:
+    """Parse InGameStageSkipResponse enough to detect per-skip ad chance rewards."""
+    r = BytesReader(data)
+    result = {"_status": r.read_int()}
+    result["StageResultList"] = _read_list(r, _read_stage_result)
+    result["_UserModelDiff_remaining"] = r.remaining()
     return result
 
 
