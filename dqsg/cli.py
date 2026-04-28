@@ -2986,6 +2986,67 @@ def cmd_jqh(args):
     _run_story_stage_command(args, hard=True)
 
 
+_JQHD_STAGE_IDS = {
+    (1, 1): 30242101,
+}
+
+
+def _jqhd_stage_master_id(chapter: int, stage: int) -> int:
+    stage_master_id = _JQHD_STAGE_IDS.get((chapter, stage))
+    if stage_master_id is None:
+        supported = ", ".join(f"{chapter}-{stage}" for chapter, stage in sorted(_JQHD_STAGE_IDS))
+        raise SystemExit(f"Unsupported jqhd stage '{chapter}-{stage}'. Supported: {supported}")
+    return stage_master_id
+
+
+def cmd_jqhd(args):
+    client, record = _load_client_for_account(args)
+    chapter, stage = _parse_story_stage_key(args.stage)
+    stage_master_id = _jqhd_stage_master_id(chapter, stage)
+
+    print(f"=== account {_account_ref(record)} ===")
+    print(f"=== 活动剧情 {chapter}-{stage} ({stage_master_id}) ===")
+
+    print("\n=== masterdata/get_version ===")
+    resp = client.masterdata_get_version()
+    _check(resp, "masterdata/get_version")
+
+    print("\n=== login/login ===")
+    resp = client.login_login(first_login=False)
+    _check(resp, "login/login")
+    login_snapshot = _build_account_snapshot_from_login(client)
+    resume_session_id = resp.get("InGameSessionId")
+
+    if resume_session_id is not None:
+        print(f"\n=== resume in_game/session ({resume_session_id}) ===")
+    else:
+        print(f"\n=== in_game/start ({stage_master_id}) ===")
+        resp = client.in_game_start(stage_master_id, deck_index=1)
+        _check(resp, f"in_game/start({stage_master_id})")
+
+    print(f"\n=== in_game/result ({stage_master_id}) ===")
+    resp = _submit_in_game_result_with_resume(
+        client,
+        stage_master_id=stage_master_id,
+        template_stage_id=stage_master_id,
+        in_game_session_id=resume_session_id,
+    )
+    _check(resp, f"in_game/result({stage_master_id})")
+
+    saved = _save_client_account(
+        client,
+        args,
+        progress=f"jqhd_{chapter}-{stage}_complete",
+        last_command=f"jqhd-{chapter}-{stage}",
+        snapshot=login_snapshot,
+    )
+
+    print("\n" + "=" * 50)
+    print(f"活动剧情 complete: {chapter}-{stage}")
+    _print_saved_account(saved, _store_path(args))
+    print("=" * 50)
+
+
 @_saved_flow(99)
 def _flow99_impl(args, client, record, login_snapshot, login_resp):
     print("\n[1/1] === collect-rewards + refresh snapshot ===")
@@ -3321,6 +3382,9 @@ _TZ_STAGE_IDS = {
         "hb": {
             1: {"stage": 10041011, "template": 10102101},
         },
+        "em": {
+            1: {"stage": 10041031, "template": 10102101},
+        },
     },
 }
 
@@ -3570,7 +3634,7 @@ def cmd_tz(args):
     stage_id = stage_config["stage"]
     template_id = stage_config["template"]
     zone_names = {"st": "饲堂"}
-    element_names = {"hb": "寒冰"}
+    element_names = {"hb": "寒冰", "em": "恶魔"}
     display_zone = zone_names.get(zone, zone)
     display_element = element_names.get(element, element)
 
@@ -3872,6 +3936,14 @@ def build_parser():
     jqh_parser.add_argument("end_stage", nargs="?", help="Optional range end such as 2-10")
     jqh_parser.set_defaults(func=cmd_jqh)
 
+    jqhd_parser = subparsers.add_parser(
+        "jqhd",
+        help="Run recorded event story stages; e.g. jqhd 1-1",
+    )
+    jqhd_parser.add_argument("--account", help="Saved account user_id, label, or latest")
+    jqhd_parser.add_argument("stage", help="Event story stage key such as 1-1")
+    jqhd_parser.set_defaults(func=cmd_jqhd)
+
     collect_rewards_parser = subparsers.add_parser(
         "collect-rewards",
         help="Alias for flow99: receive rewards and refresh snapshot for a saved account",
@@ -3958,8 +4030,8 @@ def build_parser():
     tz_parser.add_argument(
         "element",
         nargs="?",
-        choices=["hb"],
-        help="属性: hb (寒冰); only used for st",
+        choices=["hb", "em"],
+        help="属性: hb (寒冰), em (恶魔); only used for st",
     )
     tz_parser.add_argument(
         "level",
