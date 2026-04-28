@@ -257,6 +257,7 @@ static int hook_sigaction(int sig, const struct sigaction *act, struct sigaction
 
 static uintptr_t g_unityBase = 0;
 static atomic_int g_reqSeq = 0;
+static atomic_int g_resSeq = 0;
 
 static NSString *hexFromBytes(const uint8_t *bytes, int len) {
     if (!bytes || len <= 0) return @"(null)";
@@ -274,10 +275,10 @@ static NSString *hexFromBytesFull(const uint8_t *bytes, int len) {
     return s;
 }
 
-static void writeByteArrayToTmp(Il2CppByteArray *arr, int seq) {
+static void writeByteArrayToTmpWithPrefix(Il2CppByteArray *arr, NSString *prefix, int seq) {
     if (!arr || arr->max_length == 0) return;
     NSString *tmpDir = NSTemporaryDirectory();
-    NSString *filePath = [tmpDir stringByAppendingPathComponent:[NSString stringWithFormat:@"req_%d", seq]];
+    NSString *filePath = [tmpDir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@_%d", prefix, seq]];
     NSData *data = [NSData dataWithBytes:arr->items length:(NSUInteger)arr->max_length];
     [data writeToFile:filePath atomically:YES];
     NSLog(@"#pc [crypto] written to %@", filePath);
@@ -320,7 +321,7 @@ static Il2CppByteArray* hook_EncryptRequest(Il2CppByteArray *sessionKey, Il2CppS
     } else {
         NSLog(@"#pc [crypto] plaintext = (null)");
     }
-    writeByteArrayToTmp(data, seq);
+    writeByteArrayToTmpWithPrefix(data, @"req", seq);
     Il2CppByteArray *result = orig_EncryptRequest(sessionKey, requestPath, data, method);
     logByteArray("encrypted", result);
     return result;
@@ -330,13 +331,15 @@ static Il2CppByteArray* hook_EncryptRequest(Il2CppByteArray *sessionKey, Il2CppS
 typedef bool (*DecryptResponse_t)(Il2CppByteArray *sessionKey, Il2CppString *requestPath, Il2CppByteArray *responseData, Il2CppByteArray **decrypted, void *method);
 static DecryptResponse_t orig_DecryptResponse;
 static bool hook_DecryptResponse(Il2CppByteArray *sessionKey, Il2CppString *requestPath, Il2CppByteArray *responseData, Il2CppByteArray **decrypted, void *method) {
+    int seq = atomic_fetch_add(&g_resSeq, 1);
     NSString *path = il2cppStringToNS(requestPath);
     bool ok = orig_DecryptResponse(sessionKey, requestPath, responseData, decrypted, method);
-    NSLog(@"#pc [crypto] === DecryptResponse ===");
+    NSLog(@"#pc [crypto] === DecryptResponse #%d ===", seq);
     NSLog(@"#pc [crypto] path: %@, success: %d", path, ok);
     logByteArray("sessionKey", sessionKey);
     if (ok && decrypted && *decrypted) {
         logByteArray("decrypted", *decrypted);
+        writeByteArrayToTmpWithPrefix(*decrypted, @"res", seq);
     }
     return ok;
 }

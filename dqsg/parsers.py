@@ -253,6 +253,58 @@ def parse_user_model_response(data: bytes) -> dict:
     return result
 
 
+def _read_content(r: BytesReader) -> dict:
+    return {
+        "ContentType": r.read_int(),
+        "ContentMasterId": r.read_int(),
+        "ContentAmount": r.read_int(),
+    }
+
+
+def _read_content_orb(r: BytesReader) -> dict:
+    return {
+        "OrbMasterId": r.read_int(),
+        "OrbRank": r.read_int(),
+        "Amount": r.read_int(),
+    }
+
+
+def _read_content_treasure(r: BytesReader) -> dict:
+    return {
+        "ContentType": r.read_int(),
+        "ContentMasterId": r.read_int(),
+        "ContentAmount": r.read_int(),
+        "MemoryOrbRank": r.read_nullable_int(),
+        "TreasureBoxRarity": r.read_int(),
+        "IsNew": r.read_bool(),
+    }
+
+
+def _read_list(r: BytesReader, read_item) -> list[dict]:
+    return [read_item(r) for _ in range(r.read_int())]
+
+
+def parse_in_game_result_response(data: bytes) -> dict:
+    """Parse InGameResultResponse enough to detect ad chance rewards."""
+    r = BytesReader(data)
+    result = {"_status": r.read_int()}
+    stage_result = {
+        "Gold": r.read_int(),
+        "StyleExp": r.read_int(),
+        "ResultContentList": _read_list(r, _read_content),
+        "ResultContentOrbList": _read_list(r, _read_content_orb),
+        "RankRewardContentTreasureList": _read_list(r, _read_content_treasure),
+        "RankRewardContentList": _read_list(r, _read_content),
+        "ResultNewContentList": _read_list(r, _read_content),
+        "AdChanceOrbMasterId": r.read_nullable_int(),
+        "AdChancePointCardPointAmount": r.read_nullable_int(),
+        "IsPostedPresent": r.read_bool(),
+    }
+    result["StageResult"] = stage_result
+    result["_remaining_after_stage_result"] = r.remaining()
+    return result
+
+
 # ==========================================================================
 # adventure/read
 # ==========================================================================
@@ -630,8 +682,8 @@ def build_advertisement_receive_reward_chance_point_card_point_request() -> byte
     return b""
 
 
-def build_advertisement_receive_reward_ad_chance_orb_request() -> bytes:
-    return build_single_int_request(100007)
+def build_advertisement_receive_reward_ad_chance_orb_request(orb_master_id: int = 100007) -> bytes:
+    return build_single_int_request(orb_master_id)
 
 
 def build_profile_fetch_request(user_id: int) -> bytes:

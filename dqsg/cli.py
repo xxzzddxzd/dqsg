@@ -948,9 +948,9 @@ def _submit_in_game_result_with_resume(
         try:
             if build_result_body is not None:
                 raw_body = build_result_body(current_session_id)
-                return client.in_game_result(raw_body=raw_body)
+                resp = client.in_game_result(raw_body=raw_body)
             else:
-                return client.in_game_result(
+                resp = client.in_game_result(
                     stage_master_id=stage_master_id,
                     template_stage_id=template_stage_id,
                     in_game_session_id=current_session_id,
@@ -973,11 +973,30 @@ def _submit_in_game_result_with_resume(
             current_session_id = login_resp.get("InGameSessionId")
             if current_session_id is None:
                 raise RuntimeError("resume login did not return InGameSessionId") from exc
+        else:
+            _receive_in_game_result_ad_chance(client, resp)
+            return resp
 
     stage_label = stage_master_id or "raw_body"
     raise RuntimeError(
         f"in_game/result({stage_label}) still failed after {max_attempts} attempts"
     ) from last_exc
+
+
+def _receive_in_game_result_ad_chance(client: DQSGClient, result_resp: dict):
+    stage_result = result_resp.get("StageResult") or {}
+    orb_master_id = stage_result.get("AdChanceOrbMasterId")
+    point_card_amount = stage_result.get("AdChancePointCardPointAmount")
+
+    if orb_master_id is not None:
+        print(f"\n=== advertisement/receive_reward_ad_chance_orb ({orb_master_id}) ===")
+        resp = client.advertisement_receive_reward_ad_chance_orb(orb_master_id)
+        _check(resp, "advertisement/receive_reward_ad_chance_orb")
+
+    if point_card_amount is not None:
+        print(f"\n=== advertisement/receive_reward_chance_point_card_point ({point_card_amount}) ===")
+        resp = client.advertisement_receive_reward_chance_point_card_point()
+        _check(resp, "advertisement/receive_reward_chance_point_card_point")
 
 
 def _run_scored_dungeon(client, stage_master_id, build_result_body, login_resp=None):
@@ -2987,7 +3006,19 @@ def cmd_jqh(args):
 
 
 _JQHD_STAGE_IDS = {
-    (1, 1): 30242101,
+    (chapter, 1): 30242100 + chapter
+    for chapter in range(1, 7)
+}
+_JQHD_STAGE_IDS.update({
+    (chapter, 2): 30242200 + chapter
+    for chapter in range(1, 7)
+})
+
+_JQHD_TEMPLATE_STAGE_IDS = {
+    1: 30242101,
+    3: 30242203,
+    4: 30242203,
+    6: 30242204,
 }
 
 
@@ -2999,13 +3030,38 @@ def _jqhd_stage_master_id(chapter: int, stage: int) -> int:
     return stage_master_id
 
 
+def _jqhd_template_stage_id(chapter: int, stage: int = None) -> int:
+    if stage == 1:
+        return 30242101
+    if stage == 2:
+        return 30242203
+    template_stage_id = _JQHD_TEMPLATE_STAGE_IDS.get(chapter)
+    if template_stage_id is None:
+        supported = ", ".join(str(chapter) for chapter in sorted(_JQHD_TEMPLATE_STAGE_IDS))
+        raise SystemExit(f"No jqhd template for chapter {chapter}. Supported chapters: {supported}")
+    return template_stage_id
+
+
 def cmd_jqhd(args):
     client, record = _load_client_for_account(args)
-    chapter, stage = _parse_story_stage_key(args.stage)
-    stage_master_id = _jqhd_stage_master_id(chapter, stage)
+    start_chapter, start_stage = _parse_story_stage_key(args.start_stage)
+    if args.end_stage:
+        end_chapter, end_stage = _parse_story_stage_key(args.end_stage)
+    else:
+        end_chapter, end_stage = start_chapter, start_stage
+    if start_chapter != end_chapter:
+        raise SystemExit("jqhd stage ranges must stay within one chapter.")
+    if end_stage < start_stage:
+        raise SystemExit("jqhd stage range end must be greater than or equal to start.")
+
+    chapter = start_chapter
+    stage_numbers = list(range(start_stage, end_stage + 1))
+    first_stage_key = f"{chapter}-{start_stage}"
+    last_stage_key = f"{chapter}-{end_stage}"
+    range_label = first_stage_key if first_stage_key == last_stage_key else f"{first_stage_key}..{last_stage_key}"
 
     print(f"=== account {_account_ref(record)} ===")
-    print(f"=== 活动剧情 {chapter}-{stage} ({stage_master_id}) ===")
+    print(f"=== 活动剧情 {range_label} ===")
 
     print("\n=== masterdata/get_version ===")
     resp = client.masterdata_get_version()
@@ -3017,32 +3073,38 @@ def cmd_jqhd(args):
     login_snapshot = _build_account_snapshot_from_login(client)
     resume_session_id = resp.get("InGameSessionId")
 
-    if resume_session_id is not None:
-        print(f"\n=== resume in_game/session ({resume_session_id}) ===")
-    else:
-        print(f"\n=== in_game/start ({stage_master_id}) ===")
-        resp = client.in_game_start(stage_master_id, deck_index=1)
-        _check(resp, f"in_game/start({stage_master_id})")
+    for stage in stage_numbers:
+        stage_master_id = _jqhd_stage_master_id(chapter, stage)
+        template_stage_id = _jqhd_template_stage_id(chapter, stage)
+        print(f"\n=== 活动剧情 {chapter}-{stage} ({stage_master_id}) ===")
 
-    print(f"\n=== in_game/result ({stage_master_id}) ===")
-    resp = _submit_in_game_result_with_resume(
-        client,
-        stage_master_id=stage_master_id,
-        template_stage_id=stage_master_id,
-        in_game_session_id=resume_session_id,
-    )
-    _check(resp, f"in_game/result({stage_master_id})")
+        if resume_session_id is not None:
+            print(f"\n=== resume in_game/session ({resume_session_id}) ===")
+        else:
+            print(f"\n=== in_game/start ({stage_master_id}) ===")
+            resp = client.in_game_start(stage_master_id, deck_index=1)
+            _check(resp, f"in_game/start({stage_master_id})")
+
+        print(f"\n=== in_game/result ({stage_master_id}) ===")
+        resp = _submit_in_game_result_with_resume(
+            client,
+            stage_master_id=stage_master_id,
+            template_stage_id=template_stage_id,
+            in_game_session_id=resume_session_id,
+        )
+        _check(resp, f"in_game/result({stage_master_id})")
+        resume_session_id = None
 
     saved = _save_client_account(
         client,
         args,
-        progress=f"jqhd_{chapter}-{stage}_complete",
-        last_command=f"jqhd-{chapter}-{stage}",
+        progress=f"jqhd_{last_stage_key}_complete",
+        last_command=f"jqhd-{range_label}",
         snapshot=login_snapshot,
     )
 
     print("\n" + "=" * 50)
-    print(f"活动剧情 complete: {chapter}-{stage}")
+    print(f"活动剧情 complete: {range_label}")
     _print_saved_account(saved, _store_path(args))
     print("=" * 50)
 
@@ -3941,7 +4003,8 @@ def build_parser():
         help="Run recorded event story stages; e.g. jqhd 1-1",
     )
     jqhd_parser.add_argument("--account", help="Saved account user_id, label, or latest")
-    jqhd_parser.add_argument("stage", help="Event story stage key such as 1-1")
+    jqhd_parser.add_argument("start_stage", help="Event story stage key such as 1-1")
+    jqhd_parser.add_argument("end_stage", nargs="?", help="Optional range end such as 1-10")
     jqhd_parser.set_defaults(func=cmd_jqhd)
 
     collect_rewards_parser = subparsers.add_parser(
