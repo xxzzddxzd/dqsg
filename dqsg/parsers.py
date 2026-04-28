@@ -630,6 +630,10 @@ def build_advertisement_receive_reward_chance_point_card_point_request() -> byte
     return b""
 
 
+def build_advertisement_receive_reward_ad_chance_orb_request() -> bytes:
+    return build_single_int_request(100007)
+
+
 def build_profile_fetch_request(user_id: int) -> bytes:
     w = BytesWriter()
     w.write_long(user_id)

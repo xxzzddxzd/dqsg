@@ -2799,7 +2799,7 @@ def _story_stage_master_id(chapter: int, stage: int, *, hard: bool) -> int:
         (False, 2, 1): 10102101,
         (False, 2, 2): 10102151,
         (False, 2, 3): 10102102,
-        (False, 2, 4): 10102152,
+        (False, 2, 4): 10102304,
         (False, 2, 5): 10102103,
         (False, 2, 6): 10102153,
         (False, 2, 7): 10102104,
@@ -2816,12 +2816,92 @@ def _story_stage_master_id(chapter: int, stage: int, *, hard: bool) -> int:
         (False, 2, 18): 10102159,
         (False, 2, 19): 10102110,
         (False, 2, 20): 10102160,
+        (False, 3, 1): 10103101,
+        (False, 3, 2): 10103151,
+        (False, 3, 3): 10103102,
+        (False, 3, 4): 10103304,
+        (False, 3, 5): 10103103,
+        (False, 3, 6): 10103153,
+        (False, 3, 7): 10103104,
+        (False, 3, 8): 10103308,
+        (False, 3, 9): 10103105,
+        (False, 3, 10): 10103155,
+        (False, 3, 11): 10103351,
+        (False, 3, 12): 10103156,
+        (False, 3, 13): 10103107,
+        (False, 3, 14): 10103157,
+        (False, 3, 15): 10103355,
+        (False, 3, 16): 10103158,
+        (False, 3, 17): 10103109,
+        (False, 3, 18): 10103159,
+        (False, 3, 19): 10103110,
+        (False, 3, 20): 10103160,
+        (False, 4, 1): 104101,
+        (False, 4, 2): 104102,
+        (False, 4, 3): 104103,
+        (False, 4, 4): 104104,
+        (False, 4, 5): 104105,
+        (False, 4, 6): 104106,
+        (False, 4, 7): 104107,
+        (False, 4, 8): 104108,
+        (False, 4, 9): 104109,
+        (False, 4, 10): 104110,
+        (False, 4, 11): 104111,
+        (False, 4, 12): 104112,
+        (False, 4, 13): 104113,
+        (False, 4, 14): 104114,
+        (False, 4, 15): 104115,
+        (False, 4, 16): 104116,
+        (False, 4, 17): 104117,
+        (False, 4, 18): 104118,
+        (False, 4, 19): 104119,
+        (False, 4, 20): 104120,
+        (True, 3, 11): 10103206,
     }
     known = known_story_stage_ids.get((hard, chapter, stage))
     if known is not None:
         return known
-    difficulty = 2 if hard else 1
-    return int(f"101{chapter:02d}{difficulty}{stage:02d}")
+    if hard:
+        # Story hard-mode ids track the corresponding normal-stage id with the
+        # hard flag shifted by +100, even for irregular chapter-2 mappings like
+        # 10102151 -> 10102251.
+        return _story_stage_master_id(chapter, stage, hard=False) + 100
+    return int(f"101{chapter:02d}1{stage:02d}")
+
+
+def _story_default_template_stage(chapter: int) -> int:
+    if chapter == 3:
+        return 2
+    return 1
+
+
+def _resolve_story_template_stage_id(chapter: int, stage: int, *, hard: bool) -> int:
+    from .battle_templates import battle_template_exists
+
+    default_stage = _story_default_template_stage(chapter)
+    if chapter == 4:
+        candidates = [_story_stage_master_id(4, 1, hard=False)]
+    else:
+        candidates = [_story_stage_master_id(chapter, default_stage, hard=hard)]
+    candidates.append(_story_stage_master_id(chapter, stage, hard=hard))
+    if hard:
+        candidates.extend([
+            _story_stage_master_id(chapter, default_stage, hard=False),
+            _story_stage_master_id(chapter, stage, hard=False),
+        ])
+
+    seen = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        if battle_template_exists(candidate):
+            return candidate
+
+    raise FileNotFoundError(
+        f"No story template found for chapter {chapter}, stage {stage}, hard={hard}. "
+        f"Tried: {sorted(seen)}"
+    )
 
 
 def _run_story_stage_command(args, *, hard: bool):
@@ -2837,7 +2917,6 @@ def _run_story_stage_command(args, *, hard: bool):
         raise SystemExit("Story stage range end must be greater than or equal to start.")
 
     chapter = start_chapter
-    template_stage_id = _story_stage_master_id(chapter, 1, hard=hard)
     stage_numbers = list(range(start_stage, end_stage + 1))
     first_stage_key = f"{chapter}-{start_stage}"
     last_stage_key = f"{chapter}-{end_stage}"
@@ -2861,6 +2940,7 @@ def _run_story_stage_command(args, *, hard: bool):
     for stage in stage_numbers:
         stage_key = f"{chapter}-{stage}"
         stage_master_id = _story_stage_master_id(chapter, stage, hard=hard)
+        template_stage_id = _resolve_story_template_stage_id(chapter, stage, hard=hard)
         print(f"\n=== {display_mode} {stage_key} ({stage_master_id}) ===")
 
         if resume_session_id is not None:
@@ -2964,6 +3044,12 @@ def cmd_ad(args):
         _check(resp, "advertisement/receive_reward_chance_point_card_point")
         last_command = "ad"
         complete_text = "Advertisement reward request complete."
+    elif action == "tx":
+        print("\n=== advertisement/receive_reward_ad_chance_orb ===")
+        resp = client.advertisement_receive_reward_ad_chance_orb()
+        _check(resp, "advertisement/receive_reward_ad_chance_orb")
+        last_command = "ad-tx"
+        complete_text = "Advertisement expedition reward request complete."
     elif action == "gacha":
         gacha_master_id = 500000101
         print(f"\n=== gacha/draw (ad gacha, pool={gacha_master_id}) ===")
@@ -3206,11 +3292,33 @@ _HD_STAGE_IDS = {
             "default_score": 18000,
         },
     },
+    "xmss": {
+        1: {
+            "stage": 10151702,
+            "template": 10151702,
+            "default_score": 11000,
+        },
+    },
+    "shn": {
+        1: {
+            "stage": 10151703,
+            "template": 10151702,
+            "default_score": 11000,
+        },
+    },
     "qdjf": {
         1: {"stage": 30144101, "template": 30144101, "default_score": 8000},
         2: {"stage": 30144201, "template": 30144101, "default_score": 24000},
         3: {"stage": 30144301, "template": 30144101, "default_score": 72000},
         4: {"stage": 30144401, "template": 30144101, "default_score": 216000},
+    },
+}
+
+_TZ_STAGE_IDS = {
+    "st": {
+        "hb": {
+            1: {"stage": 10041011, "template": 10102101},
+        },
     },
 }
 
@@ -3238,11 +3346,12 @@ _XL_CONFIGS = {
 
 def cmd_yc(args):
     """Run a 养成 (Growth) dungeon with a specified score, or skip (tg)."""
-    from .battle_templates import load_scored_result
+    from .battle_templates import load_scored_result, read_template_score
 
     dungeon_type = args.type
     level_str = args.level
     score = args.score
+    times = args.times
 
     if dungeon_type == "slm1":
         dungeon_type = "slm"
@@ -3307,18 +3416,23 @@ def cmd_yc(args):
     except ValueError:
         raise SystemExit(f"Unknown level '{level_str}'. Use a number (1-3) or 'tg' for skip.")
 
-    if score is None:
-        raise SystemExit("--score is required for battle mode (not needed for 'tg').")
-
     stage_config = stages.get(level)
     if not stage_config:
         raise SystemExit(f"Unknown level {level} for {dungeon_type}. Available: {sorted(stages.keys())}")
     stage_id = stage_config["stage"]
     template_id = stage_config["template"]
+    if score is None:
+        score = stage_config.get("default_score")
+        if score is None:
+            score = read_template_score(
+                stage_master_id=stage_id,
+                template_stage_id=template_id,
+                template_file=stage_config.get("template_file"),
+            )
 
     client, record = _load_client_for_account(args)
     print(f"=== account {_account_ref(record)} ===")
-    print(f"=== 养成 {display_name} Lv.{level} — score={score} ===")
+    print(f"=== 养成 {display_name} Lv.{level} — score={score} ×{times} ===")
 
     print("\n=== masterdata/get_version ===")
     resp = client.masterdata_get_version()
@@ -3329,19 +3443,21 @@ def cmd_yc(args):
     _check(resp, "login/login")
     login_snapshot = _build_account_snapshot_from_login(client)
 
-    # Start + result with 500 retry SOP
-    _run_scored_dungeon(
-        client,
-        stage_id,
-        build_result_body=lambda sid: load_scored_result(
-            stage_master_id=stage_id,
-            score=score,
-            template_stage_id=template_id,
-            in_game_session_id=sid,
-            score_mirror_offsets=stage_config.get("score_mirror_offsets"),
-        ),
-        login_resp=resp,
-    )
+    for idx in range(1, times + 1):
+        if times > 1:
+            print(f"\n=== YC run {idx}/{times} ===")
+        _run_scored_dungeon(
+            client,
+            stage_id,
+            build_result_body=lambda sid: load_scored_result(
+                stage_master_id=stage_id,
+                score=score,
+                template_stage_id=template_id,
+                in_game_session_id=sid,
+                score_mirror_offsets=stage_config.get("score_mirror_offsets"),
+            ),
+            login_resp=resp,
+        )
 
     saved = _save_client_account(
         client, args,
@@ -3349,7 +3465,7 @@ def cmd_yc(args):
         snapshot=login_snapshot,
     )
     print(f"\n{'='*50}")
-    print(f"养成 {display_name} Lv.{level} complete. Score: {score}")
+    print(f"养成 {display_name} Lv.{level} complete. Score: {score}. Runs: {times}")
     _print_saved_account(saved, _store_path(args))
     print("=" * 50)
 
@@ -3360,7 +3476,7 @@ def cmd_hd(args):
 
     event_type = args.type
     level_str = args.level
-    if event_type == "jx" and level_str is None:
+    if event_type in {"jx", "xmss", "shn"} and level_str is None:
         level_str = "1"
     if level_str is None:
         raise SystemExit(f"level is required for {event_type}.")
@@ -3380,7 +3496,7 @@ def cmd_hd(args):
     stage_id = stage_config["stage"]
     template_id = stage_config["template"]
     score = args.score if args.score is not None else stage_config["default_score"]
-    type_names = {"qdjf": "强敌交锋", "jx": "巨像"}
+    type_names = {"qdjf": "强敌交锋", "jx": "巨像", "xmss": "小魔术师", "shn": "食火鸟"}
     display_name = type_names.get(event_type, event_type)
 
     client, record = _load_client_for_account(args)
@@ -3418,6 +3534,76 @@ def cmd_hd(args):
     )
     print(f"\n{'='*50}")
     print(f"活动 {display_name} Lv.{level} complete. Score: {score}")
+    _print_saved_account(saved, _store_path(args))
+    print("=" * 50)
+
+
+def cmd_tz(args):
+    """Run 挑战 dungeons."""
+    from .battle_templates import load_battle_result
+
+    zone = args.zone
+    element = args.element
+    if element is None or args.level is None:
+        raise SystemExit("tz st requires: tz st hb 1")
+    try:
+        level = int(args.level)
+    except ValueError:
+        raise SystemExit(f"Unknown level '{args.level}'. Use a number.")
+
+    zone_map = _TZ_STAGE_IDS.get(zone)
+    if not zone_map:
+        raise SystemExit(f"Unknown tz zone: {zone}. Available: {list(_TZ_STAGE_IDS.keys())}")
+    element_map = zone_map.get(element)
+    if not element_map:
+        raise SystemExit(
+            f"Unknown tz element '{element}' for zone '{zone}'. Available: {list(zone_map.keys())}"
+        )
+    stage_config = element_map.get(level)
+    if not stage_config:
+        raise SystemExit(
+            f"Unknown level {level} for tz {zone} {element}. Available: {sorted(element_map.keys())}"
+        )
+
+    stage_id = stage_config["stage"]
+    template_id = stage_config["template"]
+    zone_names = {"st": "饲堂"}
+    element_names = {"hb": "寒冰"}
+    display_zone = zone_names.get(zone, zone)
+    display_element = element_names.get(element, element)
+
+    client, record = _load_client_for_account(args)
+    print(f"=== account {_account_ref(record)} ===")
+    print(f"=== 挑战 {display_zone} {display_element} Lv.{level} ===")
+
+    print("\n=== masterdata/get_version ===")
+    resp = client.masterdata_get_version()
+    _check(resp, "masterdata/get_version")
+
+    print("\n=== login/login ===")
+    resp = client.login_login(first_login=False)
+    _check(resp, "login/login")
+    login_snapshot = _build_account_snapshot_from_login(client)
+
+    _run_scored_dungeon(
+        client,
+        stage_id,
+        build_result_body=lambda sid: load_battle_result(
+            stage_master_id=stage_id,
+            template_stage_id=template_id,
+            in_game_session_id=sid,
+        ),
+        login_resp=resp,
+    )
+
+    saved = _save_client_account(
+        client,
+        args,
+        last_command=f"tz-{zone}-{element}-{level}",
+        snapshot=login_snapshot,
+    )
+    print(f"\n{'='*50}")
+    print(f"挑战 {display_zone} {display_element} Lv.{level} complete.")
     _print_saved_account(saved, _store_path(args))
     print("=" * 50)
 
@@ -3703,9 +3889,9 @@ def build_parser():
     ad_parser.add_argument(
         "action",
         nargs="?",
-        choices=["reward", "gacha"],
+        choices=["reward", "tx", "gacha"],
         default="reward",
-        help="Action to run: reward (default) or gacha",
+        help="Action to run: reward (default), tx (探险), or gacha",
     )
     ad_parser.set_defaults(func=cmd_ad)
 
@@ -3742,20 +3928,44 @@ def build_parser():
     )
     hd_parser.add_argument("--account", help="Saved account user_id, label, or latest")
     hd_parser.add_argument(
-        "type", choices=["qdjf", "jx"],
-        help="Event type: qdjf (强敌交锋), jx (巨像)",
+        "type", choices=["qdjf", "jx", "xmss", "shn"],
+        help="Event type: qdjf (强敌交锋), jx (巨像), xmss (小魔术师), shn (食火鸟)",
     )
     hd_parser.add_argument(
         "level",
         nargs="?",
         choices=["1", "2", "3", "4"],
-        help="Difficulty level; optional for jx",
+        help="Difficulty level; optional for jx/xmss/shn",
     )
     hd_parser.add_argument(
         "--score", type=int, default=None,
-        help="Score to submit; defaults: qdjf 1=8000, 2=24000, 3=72000, 4=216000; jx=18000",
+        help="Score to submit; defaults: qdjf 1=8000, 2=24000, 3=72000, 4=216000; jx=18000; xmss/shn=11000",
     )
     hd_parser.set_defaults(func=cmd_hd)
+
+    tz_parser = subparsers.add_parser(
+        "tz",
+        help="Run 挑战 dungeons",
+    )
+    tz_parser.add_argument("--account", help="Saved account user_id, label, or latest")
+    tz_parser.add_argument(
+        "zone",
+        choices=["st"],
+        help="挑战区域: st (饲堂)",
+    )
+    tz_parser.add_argument(
+        "element",
+        nargs="?",
+        choices=["hb"],
+        help="属性: hb (寒冰); only used for st",
+    )
+    tz_parser.add_argument(
+        "level",
+        nargs="?",
+        choices=["1"],
+        help="Level; only used for st",
+    )
+    tz_parser.set_defaults(func=cmd_tz)
 
     xl_parser = subparsers.add_parser(
         "xl",
@@ -3796,6 +4006,10 @@ def build_parser():
     yc_parser.add_argument(
         "--count", type=int, default=3,
         help="Skip count for tg mode (default: 3)",
+    )
+    yc_parser.add_argument(
+        "--times", type=int, default=1,
+        help="Repeat count for battle mode (default: 1)",
     )
     yc_parser.set_defaults(func=cmd_yc)
 

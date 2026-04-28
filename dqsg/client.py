@@ -48,6 +48,7 @@ from .parsers import (
     build_mission_panel_receive_reward_request,
     build_user_rank_receive_reward_request,
     build_advertisement_receive_reward_chance_point_card_point_request,
+    build_advertisement_receive_reward_ad_chance_orb_request,
     build_profile_fetch_request,
     build_album_receive_orb_rank_reward_request,
     build_album_receive_enemy_kill_count_reward_request,
@@ -245,12 +246,12 @@ class DQSGClient:
             raise last_exc
         if resp.status_code != 200:
             retry_tag = "(retry)" if resp.status_code >= 500 else ""
-            print(f"{line} req:200 res:{resp.status_code}{retry_tag}")
+            print(f"{line} req:{_http_status_text(200)} res:{_http_status_text(resp.status_code)}{retry_tag}")
             resp.raise_for_status()
         decrypted = decrypt_response(key, path, resp.content)
         self.last_response_raw = decrypted
         self.last_response_endpoint = endpoint
-        print(f"{line} req:200 res:{resp.status_code}")
+        print(f"{line} req:{_http_status_text(200)} res:{_http_status_text(resp.status_code)}")
 
         # Save decrypted response body
         os.makedirs("res", exist_ok=True)
@@ -372,7 +373,7 @@ class DQSGClient:
     def delete_account(self):
         data = self.call_authenticated("user/delete")
         resp = parse_empty_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     # ------------------------------------------------------------------
@@ -382,41 +383,41 @@ class DQSGClient:
     def in_game_start_tutorial(self):
         data = self.call_authenticated("in_game/start_tutorial")
         resp = parse_start_tutorial_response(data)
-        print(f"  <- {_status_text(resp['_status'])}, remaining={resp['_remaining']} bytes")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}, remaining={resp['_remaining']} bytes")
         return resp
 
     def in_game_result_tutorial(self):
         data = self.call_authenticated("in_game/result_tutorial")
         resp = parse_result_tutorial_response(data)
-        print(f"  <- {_status_text(resp['_status'])}, remaining={resp['_remaining']} bytes")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}, remaining={resp['_remaining']} bytes")
         return resp
 
     def adventure_read(self, adventure_master_id: int):
         req = build_adventure_read_request(adventure_master_id)
         data = self.call_authenticated("adventure/read", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def tutorial_read(self, tutorial_step: int):
         req = build_tutorial_read_request(tutorial_step)
         data = self.call_authenticated("tutorial/read", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def feature_intro_read(self, feature_intro_type: int):
         req = build_feature_intro_read_request(feature_intro_type)
         data = self.call_authenticated("feature_intro/read", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def profile_set_user_name(self, name: str):
         req = build_set_user_name_request(name)
         data = self.call_authenticated("profile/set_user_name", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def avatar_save(self, avatar_id=1, body_id=1, face_id=1,
@@ -427,28 +428,28 @@ class DQSGClient:
             skin_color_id, hair_id, hair_color_id, voice_id)
         data = self.call_authenticated("avatar/save", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def metric_tutorial(self):
         req = build_metric_tutorial_request()
         data = self.call_authenticated("metric/tutorial", req)
         resp = parse_metric_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def metric_adventure_skip(self, adventure_master_id: int, command_index: int):
         req = build_metric_adventure_skip_request(adventure_master_id, command_index)
         data = self.call_authenticated("metric/adventure_skip", req)
         resp = parse_metric_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def metric_low_fps_prolonged(self, current_fps: float, duration: float, scene_id: str):
         req = build_metric_low_fps_request(current_fps, duration, scene_id)
         data = self.call_authenticated("metric/low_fps_prolonged", req)
         resp = parse_metric_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def metric_device(self, platform: str = "IPhonePlayer",
@@ -460,7 +461,7 @@ class DQSGClient:
                                           device_model, system_memory_mb)
         data = self.call_authenticated("metric/device", req)
         resp = parse_metric_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     # ------------------------------------------------------------------
@@ -472,13 +473,13 @@ class DQSGClient:
         req = build_in_game_start_request(stage_master_id, deck_index, friend_style_id)
         data = self.call_authenticated("in_game/start", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def in_game_start_raw(self, raw_body: bytes):
         data = self.call_authenticated("in_game/start", raw_body)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def in_game_result(self, stage_master_id: int = None,
@@ -491,7 +492,7 @@ class DQSGClient:
                                            raw_body=raw_body)
         data = self.call_authenticated("in_game/result", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def in_game_skip_stage(self, stage_master_id: int, count: int = 3):
@@ -501,13 +502,13 @@ class DQSGClient:
         w.write_int(count)
         data = self.call_authenticated("in_game/skip_stage", w.to_bytes())
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def matching_room_fetch_multi_data_raw(self, raw_body: bytes):
         data = self.call_authenticated("matching_room/fetch_multi_data", raw_body)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     # ------------------------------------------------------------------
@@ -517,7 +518,7 @@ class DQSGClient:
     def gacha_fetch_top(self):
         data = self.call_authenticated("gacha/fetch_top")
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def gacha_draw(self, gacha_master_id: int):
@@ -525,17 +526,20 @@ class DQSGClient:
         req = build_gacha_draw_request(gacha_master_id)
         data = self.call_authenticated("gacha/draw", req)
         resp = parse_gacha_draw_response(data)
-        print(f"  <- {_status_text(resp['_status'])}, {resp['reward_count']} rewards")
-        for rw in resp["rewards"]:
-            star = '★' * rw['rarity']
-            print(f"     {star} {rw['display']}  (mid={rw['content_master_id']})")
+        if self.debug:
+            print(f"  <- {_status_text(resp['_status'])}, {resp['reward_count']} rewards")
+            for rw in resp["rewards"]:
+                star = '★' * rw['rarity']
+                print(f"     {star} {rw['display']}  (mid={rw['content_master_id']})")
         return resp
 
     def gacha_fetch_list(self):
         data = self.call_authenticated("gacha/fetch_list")
         resp = parse_gacha_fetch_list_response(data)
-        print(f"  <- {_status_text(resp['_status'])}, draw_count={resp['draw_count']}, "
-              f"pools={len(resp['gacha_ids'])}")
+        self.debug_log(
+            f"  <- {_status_text(resp['_status'])}, draw_count={resp['draw_count']}, "
+            f"pools={len(resp['gacha_ids'])}"
+        )
         return resp
 
     # ------------------------------------------------------------------
@@ -546,14 +550,14 @@ class DQSGClient:
         req = build_deck_save_equipment_request(raw_body)
         data = self.call_authenticated("deck/save_style_equipment", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def deck_save_auto_style_equipment(self, raw_body: bytes):
         req = build_deck_save_equipment_request(raw_body)
         data = self.call_authenticated("deck/save_auto_style_equipment", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     # ------------------------------------------------------------------
@@ -563,14 +567,14 @@ class DQSGClient:
     def present_fetch(self):
         data = self.call_authenticated("present/fetch")
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def present_receive(self, present_ids: list[int]):
         req = build_present_receive_request(present_ids)
         data = self.call_authenticated("present/receive", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     # ------------------------------------------------------------------
@@ -581,61 +585,61 @@ class DQSGClient:
         req = build_playable_guide_read_request(guide_id)
         data = self.call_authenticated("playable_guide/read", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def notice_fetch_notices(self):
         data = self.call_authenticated("notice/fetch_notices")
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def notice_read_all_normal_notices(self, notice_ids: list[int]):
         req = build_notice_read_all_normal_notices_request(notice_ids)
         data = self.call_authenticated("notice/read_all_normal_notices", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def notice_fetch_detail(self, notice_id: int):
         req = build_notice_detail_request(notice_id)
         data = self.call_authenticated("notice/fetch_notice_detail", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def billing_update_web_store(self):
         data = self.call_authenticated("billing/update_web_store")
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def release_function_unlock(self, function_id: int):
         req = build_release_function_unlock_request(function_id)
         data = self.call_authenticated("release_function/unlock", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def main_area_read_unlock(self, area_master_id: int, area_difficulty: int):
         req = build_main_area_read_unlock_request(area_master_id, area_difficulty)
         data = self.call_authenticated("main_area/read_unlock", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def area_receive_achievement_reward(self, area_achievement_ids: list[int]):
         req = build_area_receive_achievement_reward_request(area_achievement_ids)
         data = self.call_authenticated("area/receive_achievement_reward", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def mission_get_summary(self):
         req = build_mission_get_summary_request()
         data = self.call_authenticated("mission/get_mission_summary", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def mission_receive_daily_reward_and_progress_reward(
@@ -656,103 +660,110 @@ class DQSGClient:
             req,
         )
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def mission_receive_achievement_reward(self, mission_ids: list[int]):
         req = build_mission_receive_achievement_reward_request(mission_ids)
         data = self.call_authenticated("mission/receive_mission_achievement_reward", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def mission_receive_event_reward(self, mission_ids: list[int]):
         req = build_mission_receive_event_reward_request(mission_ids)
         data = self.call_authenticated("mission/receive_mission_event_reward", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def mission_receive_daily_reward(self, mission_ids: list[int]):
         req = build_mission_receive_daily_reward_request(mission_ids)
         data = self.call_authenticated("mission/receive_mission_daily_reward", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def mission_receive_daily_progress_reward(self, mission_ids: list[int]):
         req = build_mission_receive_daily_progress_reward_request(mission_ids)
         data = self.call_authenticated("mission/receive_mission_daily_progress_reward", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def mission_receive_weekly_reward(self, mission_ids: list[int]):
         req = build_mission_receive_weekly_reward_request(mission_ids)
         data = self.call_authenticated("mission/receive_mission_weekly_reward", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def mission_receive_weekly_progress_reward(self, mission_ids: list[int]):
         req = build_mission_receive_weekly_progress_reward_request(mission_ids)
         data = self.call_authenticated("mission/receive_mission_weekly_progress_reward", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def mission_panel_fetch(self, mission_panel_master_id: int):
         req = build_mission_panel_fetch_request(mission_panel_master_id)
         data = self.call_authenticated("mission_panel/fetch_mission", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def mission_panel_receive_reward(self, mission_panel_master_id: int):
         req = build_mission_panel_receive_reward_request(mission_panel_master_id)
         data = self.call_authenticated("mission_panel/receive_mission_reward", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def user_rank_receive_reward(self):
         req = build_user_rank_receive_reward_request()
         data = self.call_authenticated("user_rank/receive_reward", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def advertisement_receive_reward_chance_point_card_point(self):
         req = build_advertisement_receive_reward_chance_point_card_point_request()
         data = self.call_authenticated("advertisement/receive_reward_chance_point_card_point", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
+        return resp
+
+    def advertisement_receive_reward_ad_chance_orb(self):
+        req = build_advertisement_receive_reward_ad_chance_orb_request()
+        data = self.call_authenticated("advertisement/receive_reward_ad_chance_orb", req)
+        resp = parse_user_model_response(data)
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def profile_fetch(self):
         req = build_profile_fetch_request(self.user_id)
         data = self.call_authenticated("profile/fetch", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def weapon_growth_level(self, user_weapon_id: int, consume_content_list: list[tuple[int, int, int]]):
         req = build_weapon_growth_level_request(user_weapon_id, consume_content_list)
         data = self.call_authenticated("weapon/growth_level", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def album_receive_orb_rank_reward(self, reward_ids: list[int]):
         req = build_album_receive_orb_rank_reward_request(reward_ids)
         data = self.call_authenticated("album/receive_orb_rank_reward", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def album_receive_enemy_kill_count_reward(self, reward_ids: list[int]):
         req = build_album_receive_enemy_kill_count_reward_request(reward_ids)
         data = self.call_authenticated("album/receive_enemy_kill_count_reward", req)
         resp = parse_user_model_response(data)
-        print(f"  <- {_status_text(resp['_status'])}")
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp

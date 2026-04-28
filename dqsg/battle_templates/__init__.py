@@ -28,6 +28,12 @@ _STAGE_ID_OFFSET = 0
 _SESSION_ID_OFFSET = 4
 
 
+def battle_template_exists(stage_master_id: int, template_file: str = None) -> bool:
+    filename = template_file or f"stage_{stage_master_id}.bin"
+    path = os.path.join(_TEMPLATE_DIR, filename)
+    return os.path.exists(path)
+
+
 def load_battle_result(stage_master_id: int,
                        template_stage_id: int = None,
                        in_game_session_id: int = None,
@@ -202,6 +208,24 @@ def load_scored_result(stage_master_id: int,
         struct.pack_into('<i', body, offset, score)
 
     return bytes(body)
+
+
+def read_template_score(stage_master_id: int,
+                        template_stage_id: int = None,
+                        template_file: str = None) -> int:
+    """Read the original score value stored in a scored template."""
+    src = template_stage_id or stage_master_id
+    filename = template_file or f"stage_{src}.bin"
+    path = os.path.join(_TEMPLATE_DIR, filename)
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"No battle template for stage {src}. "
+            f"Capture one and save to {path}"
+        )
+
+    body = bytearray(open(path, "rb").read())
+    score_offset = _find_score_offset(body)
+    return struct.unpack_from('<i', body, score_offset)[0]
 
 
 def _find_score_offset(body: bytearray) -> int:
