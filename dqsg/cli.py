@@ -3031,6 +3031,15 @@ _JQHD_TEMPLATE_STAGE_IDS = {
     6: 30242204,
 }
 
+_JQHD_QDTZ_TEMPLATE_STAGE_ID = 30243011
+_JQHD_QDTZ_DEFAULT_SCORES = {
+    1: 8001,
+    2: 24000,
+    3: 72000,
+    4: 216000,
+    5: 432000,
+}
+
 
 def _jqhd_stage_master_id(chapter: int, stage: int) -> int:
     stage_master_id = _JQHD_STAGE_IDS.get((chapter, stage))
@@ -3052,7 +3061,79 @@ def _jqhd_template_stage_id(chapter: int, stage: int = None) -> int:
     return template_stage_id
 
 
+def _jqhd_qdtz_stage_master_id(level: int, stage: int) -> int:
+    if level not in _JQHD_QDTZ_DEFAULT_SCORES:
+        supported = ", ".join(str(level) for level in sorted(_JQHD_QDTZ_DEFAULT_SCORES))
+        raise SystemExit(f"Unsupported jqhd qdtz level {level}. Supported: {supported}")
+    return _JQHD_QDTZ_TEMPLATE_STAGE_ID + level - 1
+
+
+def cmd_jqhd_qdtz(args, level_text: str):
+    from .battle_templates import load_scored_result
+
+    if not level_text.isdigit():
+        raise SystemExit("Invalid jqhd qdtz level. Use format like: jqhd qdtz 1")
+
+    level = int(level_text)
+    stage_master_id = _jqhd_qdtz_stage_master_id(level, 1)
+    score = args.score if args.score is not None else _JQHD_QDTZ_DEFAULT_SCORES[level]
+    client, record = _load_client_for_account(args)
+
+    print(f"=== account {_account_ref(record)} ===")
+    print(f"=== 强敌挑战 Lv.{level} ({stage_master_id}) — score={score} ===")
+
+    print("\n=== masterdata/get_version ===")
+    resp = client.masterdata_get_version()
+    _check(resp, "masterdata/get_version")
+
+    print("\n=== login/login ===")
+    resp = client.login_login(first_login=False)
+    _check(resp, "login/login")
+    login_snapshot = _build_account_snapshot_from_login(client)
+    resume_session_id = resp.get("InGameSessionId")
+
+    if resume_session_id is not None:
+        print(f"\n=== resume in_game/session ({resume_session_id}) ===")
+    else:
+        print(f"\n=== in_game/start ({stage_master_id}) ===")
+        resp = client.in_game_start(stage_master_id, deck_index=1)
+        _check(resp, f"in_game/start({stage_master_id})")
+
+    print(f"\n=== in_game/result ({stage_master_id}) ===")
+    resp = _submit_in_game_result_with_resume(
+        client,
+        stage_master_id=stage_master_id,
+        build_result_body=lambda sid: load_scored_result(
+            stage_master_id=stage_master_id,
+            score=score,
+            template_stage_id=_JQHD_QDTZ_TEMPLATE_STAGE_ID,
+            in_game_session_id=sid,
+        ),
+        in_game_session_id=resume_session_id,
+    )
+    _check(resp, f"in_game/result({stage_master_id})")
+
+    saved = _save_client_account(
+        client,
+        args,
+        progress=f"jqhd_qdtz_{level}_complete",
+        last_command=f"jqhd-qdtz-{level}",
+        snapshot=login_snapshot,
+    )
+
+    print("\n" + "=" * 50)
+    print(f"强敌挑战 Lv.{level} complete. Score: {score}")
+    _print_saved_account(saved, _store_path(args))
+    print("=" * 50)
+
+
 def cmd_jqhd(args):
+    if args.start_stage.lower() == "qdtz":
+        if not args.end_stage:
+            raise SystemExit("jqhd qdtz requires a level. Use format like: jqhd qdtz 1")
+        cmd_jqhd_qdtz(args, args.end_stage)
+        return
+
     client, record = _load_client_for_account(args)
     start_chapter, start_stage = _parse_story_stage_key(args.start_stage)
     if args.end_stage:
@@ -4011,11 +4092,15 @@ def build_parser():
 
     jqhd_parser = subparsers.add_parser(
         "jqhd",
-        help="Run recorded event story stages; e.g. jqhd 1-1",
+        help="Run recorded event stages; e.g. jqhd 1-1 or jqhd qdtz 1",
     )
     jqhd_parser.add_argument("--account", help="Saved account user_id, label, or latest")
-    jqhd_parser.add_argument("start_stage", help="Event story stage key such as 1-1")
-    jqhd_parser.add_argument("end_stage", nargs="?", help="Optional range end such as 1-10")
+    jqhd_parser.add_argument(
+        "--score", type=int, default=None,
+        help="Score override for jqhd qdtz; defaults: 1=8001, 2=24000, 3=72000, 4=216000, 5=432000",
+    )
+    jqhd_parser.add_argument("start_stage", help="Event stage key such as 1-1, or qdtz")
+    jqhd_parser.add_argument("end_stage", nargs="?", help="Optional range end such as 1-10, or qdtz level")
     jqhd_parser.set_defaults(func=cmd_jqhd)
 
     collect_rewards_parser = subparsers.add_parser(
