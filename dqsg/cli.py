@@ -3086,10 +3086,13 @@ def cmd_jqhd_qdtz(args, level_text: str):
     level = int(level_text)
     stage_master_id = _jqhd_qdtz_stage_master_id(level, 1)
     score = args.score if args.score is not None else _JQHD_QDTZ_DEFAULT_SCORES[level]
+    times = args.times
+    if times <= 0:
+        raise SystemExit("--times must be positive.")
     client, record = _load_client_for_account(args)
 
     print(f"=== account {_account_ref(record)} ===")
-    print(f"=== 强敌挑战 Lv.{level} ({stage_master_id}) — score={score} ===")
+    print(f"=== 强敌挑战 Lv.{level} ({stage_master_id}) — score={score} ×{times} ===")
 
     print("\n=== masterdata/get_version ===")
     resp = client.masterdata_get_version()
@@ -3101,42 +3104,49 @@ def cmd_jqhd_qdtz(args, level_text: str):
     login_snapshot = _build_account_snapshot_from_login(client)
     resume_session_id = resp.get("InGameSessionId")
 
-    if resume_session_id is not None:
-        print(f"\n=== resume in_game/session ({resume_session_id}) ===")
-    else:
-        print(f"\n=== in_game/start ({stage_master_id}) ===")
-        resp = client.in_game_start(stage_master_id, deck_index=1)
-        _check(resp, f"in_game/start({stage_master_id})")
+    for run_no in range(1, times + 1):
+        print(f"\n--- run {run_no}/{times} ---")
+        if resume_session_id is not None:
+            print(f"\n=== resume in_game/session ({resume_session_id}) ===")
+        else:
+            print(f"\n=== in_game/start ({stage_master_id}) ===")
+            resp = client.in_game_start(stage_master_id, deck_index=1)
+            _check(resp, f"in_game/start({stage_master_id})")
 
-    print(f"\n=== in_game/result ({stage_master_id}) ===")
-    resp = _submit_in_game_result_with_resume(
-        client,
-        stage_master_id=stage_master_id,
-        build_result_body=lambda sid: load_scored_result(
+        print(f"\n=== in_game/result ({stage_master_id}) ===")
+        resp = _submit_in_game_result_with_resume(
+            client,
             stage_master_id=stage_master_id,
-            score=score,
-            template_stage_id=_JQHD_QDTZ_TEMPLATE_STAGE_ID,
-            in_game_session_id=sid,
-        ),
-        in_game_session_id=resume_session_id,
-    )
-    _check(resp, f"in_game/result({stage_master_id})")
+            build_result_body=lambda sid: load_scored_result(
+                stage_master_id=stage_master_id,
+                score=score,
+                template_stage_id=_JQHD_QDTZ_TEMPLATE_STAGE_ID,
+                in_game_session_id=sid,
+            ),
+            in_game_session_id=resume_session_id,
+        )
+        _check(resp, f"in_game/result({stage_master_id})")
+        resume_session_id = None
 
     saved = _save_client_account(
         client,
         args,
         progress=f"jqhd_qdtz_{level}_complete",
-        last_command=f"jqhd-qdtz-{level}",
+        last_command=f"jqhd-qdtz-{level}x{times}",
         snapshot=login_snapshot,
     )
 
     print("\n" + "=" * 50)
-    print(f"强敌挑战 Lv.{level} complete. Score: {score}")
+    print(f"强敌挑战 Lv.{level} complete. Score: {score}. Runs: {times}")
     _print_saved_account(saved, _store_path(args))
     print("=" * 50)
 
 
 def cmd_jqhd(args):
+    times = args.times
+    if times <= 0:
+        raise SystemExit("--times must be positive.")
+
     if args.start_stage.lower() == "qdtz":
         if not args.end_stage:
             raise SystemExit("jqhd qdtz requires a level. Use format like: jqhd qdtz 1")
@@ -3161,7 +3171,7 @@ def cmd_jqhd(args):
     range_label = first_stage_key if first_stage_key == last_stage_key else f"{first_stage_key}..{last_stage_key}"
 
     print(f"=== account {_account_ref(record)} ===")
-    print(f"=== 活动剧情 {range_label} ===")
+    print(f"=== 活动剧情 {range_label} ×{times} ===")
 
     print("\n=== masterdata/get_version ===")
     resp = client.masterdata_get_version()
@@ -3174,37 +3184,38 @@ def cmd_jqhd(args):
     resume_session_id = resp.get("InGameSessionId")
 
     for stage in stage_numbers:
-        stage_master_id = _jqhd_stage_master_id(chapter, stage)
-        template_stage_id = _jqhd_template_stage_id(chapter, stage)
-        print(f"\n=== 活动剧情 {chapter}-{stage} ({stage_master_id}) ===")
+        for run_no in range(1, times + 1):
+            stage_master_id = _jqhd_stage_master_id(chapter, stage)
+            template_stage_id = _jqhd_template_stage_id(chapter, stage)
+            print(f"\n=== 活动剧情 {chapter}-{stage} ({stage_master_id}) run {run_no}/{times} ===")
 
-        if resume_session_id is not None:
-            print(f"\n=== resume in_game/session ({resume_session_id}) ===")
-        else:
-            print(f"\n=== in_game/start ({stage_master_id}) ===")
-            resp = client.in_game_start(stage_master_id, deck_index=1)
-            _check(resp, f"in_game/start({stage_master_id})")
+            if resume_session_id is not None:
+                print(f"\n=== resume in_game/session ({resume_session_id}) ===")
+            else:
+                print(f"\n=== in_game/start ({stage_master_id}) ===")
+                resp = client.in_game_start(stage_master_id, deck_index=1)
+                _check(resp, f"in_game/start({stage_master_id})")
 
-        print(f"\n=== in_game/result ({stage_master_id}) ===")
-        resp = _submit_in_game_result_with_resume(
-            client,
-            stage_master_id=stage_master_id,
-            template_stage_id=template_stage_id,
-            in_game_session_id=resume_session_id,
-        )
-        _check(resp, f"in_game/result({stage_master_id})")
-        resume_session_id = None
+            print(f"\n=== in_game/result ({stage_master_id}) ===")
+            resp = _submit_in_game_result_with_resume(
+                client,
+                stage_master_id=stage_master_id,
+                template_stage_id=template_stage_id,
+                in_game_session_id=resume_session_id,
+            )
+            _check(resp, f"in_game/result({stage_master_id})")
+            resume_session_id = None
 
     saved = _save_client_account(
         client,
         args,
         progress=f"jqhd_{last_stage_key}_complete",
-        last_command=f"jqhd-{range_label}",
+        last_command=f"jqhd-{range_label}x{times}",
         snapshot=login_snapshot,
     )
 
     print("\n" + "=" * 50)
-    print(f"活动剧情 complete: {range_label}")
+    print(f"活动剧情 complete: {range_label}. Runs per stage: {times}")
     _print_saved_account(saved, _store_path(args))
     print("=" * 50)
 
@@ -4117,6 +4128,7 @@ def build_parser():
         "--score", type=int, default=None,
         help="Score override for jqhd qdtz; defaults: 1=8001, 2=24000, 3=72000, 4=216000, 5=432000",
     )
+    jqhd_parser.add_argument("--times", type=int, default=1, help="Repeat each jqhd stage this many times")
     jqhd_parser.add_argument("start_stage", help="Event stage key such as 1-1, or qdtz")
     jqhd_parser.add_argument("end_stage", nargs="?", help="Optional range end such as 1-10, or qdtz level")
     jqhd_parser.set_defaults(func=cmd_jqhd)
