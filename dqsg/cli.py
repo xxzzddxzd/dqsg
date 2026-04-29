@@ -989,6 +989,11 @@ def _receive_in_game_result_ad_chance(client: DQSGClient, result_resp: dict):
         stage_results.append(result_resp["StageResult"])
     stage_results.extend(result_resp.get("StageResultList") or [])
 
+    if not stage_results:
+        print("\n=== advertisement/ad_chance_check: no StageResult ===")
+        return
+
+    print(f"\n=== advertisement/ad_chance_check ({len(stage_results)} result(s)) ===")
     for idx, stage_result in enumerate(stage_results, 1):
         _receive_stage_result_ad_chance(client, stage_result, idx if len(stage_results) > 1 else None)
 
@@ -997,6 +1002,10 @@ def _receive_stage_result_ad_chance(client: DQSGClient, stage_result: dict, inde
     orb_master_id = stage_result.get("AdChanceOrbMasterId")
     point_card_amount = stage_result.get("AdChancePointCardPointAmount")
     suffix = f" #{index}" if index is not None else ""
+
+    if orb_master_id is None and point_card_amount is None:
+        print(f"  ad chance{suffix}: none")
+        return
 
     if orb_master_id is not None:
         print(f"\n=== advertisement/receive_reward_ad_chance_orb{suffix} ({orb_master_id}) ===")
