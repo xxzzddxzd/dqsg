@@ -15,7 +15,7 @@ STARTUP_KEY = bytes.fromhex(
 RSA_XML_MODULUS = "poGCjm3VkroQY425+eih2vgbWZ6sDno36CtqItVMYB+wkMR+9TFWm44/L0eAVnWwbeV/G3DRSyjRfp9dvPzBwCo3Jq5j3AT1xerZ26npDA5xHuKFYfoO322wyHxq6C7vb2Wdf8vBFJ/7n8iSXeQ4pzn0ZqntdC/gs4TuW6i2Sxk="
 RSA_XML_EXPONENT = "AQAB"
 
-BASE_URL = os.environ.get("DQSG_BASE_URL", "https://api.gl.smgr.klabgames.net/ep01003")
+BASE_URL = os.environ.get("DQSG_BASE_URL", "https://api.gl.smgr.klabgames.net/ep01004")
 
 _modulus = int.from_bytes(base64.b64decode(RSA_XML_MODULUS), "big")
 _exponent = int.from_bytes(base64.b64decode(RSA_XML_EXPONENT), "big")

@@ -3275,6 +3275,15 @@ def cmd_ad(args):
         _check(resp, "advertisement/receive_reward_ad_chance_orb")
         last_command = "ad-tx"
         complete_text = "Advertisement expedition reward request complete."
+    elif action == "store":
+        store_exchanges = [104000302, 104000301]
+        for exchange_master_id in store_exchanges:
+            count = 1
+            print(f"\n=== shop_exchange/exchange ({exchange_master_id} x{count}) ===")
+            resp = client.shop_exchange_exchange(exchange_master_id, count)
+            _check(resp, "shop_exchange/exchange")
+        last_command = "ad-store"
+        complete_text = "Advertisement store exchanges complete."
     elif action == "gacha":
         gacha_master_id = 500000101
         print(f"\n=== gacha/draw (ad gacha, pool={gacha_master_id}) ===")
@@ -4131,9 +4140,9 @@ def build_parser():
     ad_parser.add_argument(
         "action",
         nargs="?",
-        choices=["reward", "tx", "gacha"],
+        choices=["reward", "tx", "store", "gacha"],
         default="reward",
-        help="Action to run: reward (default), tx (探险), or gacha",
+        help="Action to run: reward (default), tx (探险), store, or gacha",
     )
     ad_parser.set_defaults(func=cmd_ad)
 

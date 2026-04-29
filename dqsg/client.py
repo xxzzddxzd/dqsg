@@ -51,6 +51,7 @@ from .parsers import (
     build_user_rank_receive_reward_request,
     build_advertisement_receive_reward_chance_point_card_point_request,
     build_advertisement_receive_reward_ad_chance_orb_request,
+    build_shop_exchange_exchange_request,
     build_profile_fetch_request,
     build_album_receive_orb_rank_reward_request,
     build_album_receive_enemy_kill_count_reward_request,
@@ -738,6 +739,13 @@ class DQSGClient:
     def advertisement_receive_reward_ad_chance_orb(self, orb_master_id: int = 100007):
         req = build_advertisement_receive_reward_ad_chance_orb_request(orb_master_id)
         data = self.call_authenticated("advertisement/receive_reward_ad_chance_orb", req)
+        resp = parse_user_model_response(data)
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
+        return resp
+
+    def shop_exchange_exchange(self, exchange_master_id: int, count: int = 1):
+        req = build_shop_exchange_exchange_request(exchange_master_id, count)
+        data = self.call_authenticated("shop_exchange/exchange", req)
         resp = parse_user_model_response(data)
         self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp

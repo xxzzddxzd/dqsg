@@ -704,6 +704,13 @@ def build_advertisement_receive_reward_ad_chance_orb_request(orb_master_id: int 
     return build_single_int_request(orb_master_id)
 
 
+def build_shop_exchange_exchange_request(exchange_master_id: int, count: int = 1) -> bytes:
+    w = BytesWriter()
+    w.write_int(exchange_master_id)
+    w.write_int(count)
+    return w.to_bytes()
+
+
 def build_profile_fetch_request(user_id: int) -> bytes:
     w = BytesWriter()
     w.write_long(user_id)
