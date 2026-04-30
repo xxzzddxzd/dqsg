@@ -3069,7 +3069,7 @@ _JQHD_QDTZ_DEFAULT_SCORES = {
     2: 24000,
     3: 72000,
     4: 216000,
-    5: 432000,
+    5: 54001,
 }
 
 
@@ -4149,7 +4149,7 @@ def build_parser():
     jqhd_parser.add_argument("--account", help="Saved account user_id, label, or latest")
     jqhd_parser.add_argument(
         "--score", type=int, default=None,
-        help="Score override for jqhd qdtz; defaults: 1=8001, 2=24000, 3=72000, 4=216000, 5=432000",
+        help="Score override for jqhd qdtz; defaults: 1=8001, 2=24000, 3=72000, 4=216000, 5=54001",
     )
     jqhd_parser.add_argument("--times", type=int, default=1, help="Repeat each jqhd stage this many times")
     jqhd_parser.add_argument("start_stage", help="Event stage key such as 1-1, or qdtz")
