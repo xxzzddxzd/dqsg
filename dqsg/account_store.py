@@ -20,6 +20,7 @@ def _default_store() -> dict:
     return {
         "version": 2,
         "accounts": {},
+        "last_selected_account": None,
     }
 
 
@@ -194,6 +195,28 @@ def resolve_account(account_ref: str, path: str | Path = ACCOUNT_STORE_PATH) -> 
     )
 
 
+def resolve_last_selected_account(path: str | Path = ACCOUNT_STORE_PATH) -> dict | None:
+    store = load_store(path)
+    account_ref = store.get("last_selected_account")
+    if account_ref is None:
+        return None
+    accounts = store.get("accounts", {})
+    record = accounts.get(str(account_ref))
+    if record is None:
+        return None
+    return _hydrate_record(record)
+
+
+def set_last_selected_account(account_ref: str | int, path: str | Path = ACCOUNT_STORE_PATH) -> dict:
+    store_path = Path(path)
+    store = load_store(store_path)
+    record = resolve_account(str(account_ref), path=store_path)
+    store["last_selected_account"] = str(int(record["user_id"]))
+    store_path.parent.mkdir(parents=True, exist_ok=True)
+    store_path.write_text(json.dumps(store, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return record
+
+
 def delete_account_record(account_ref: str, path: str | Path = ACCOUNT_STORE_PATH) -> dict:
     store_path = Path(path)
     store = load_store(store_path)
@@ -203,6 +226,8 @@ def delete_account_record(account_ref: str, path: str | Path = ACCOUNT_STORE_PAT
     existing = accounts.pop(account_id, None)
     if existing is None:
         raise AccountStoreError(f"Account '{account_ref}' was not found in {store_path}")
+    if str(store.get("last_selected_account")) == account_id:
+        store["last_selected_account"] = None
     store_path.parent.mkdir(parents=True, exist_ok=True)
     store_path.write_text(json.dumps(store, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return _hydrate_record(existing)

@@ -17,7 +17,9 @@ from .account_store import (
     delete_account_record,
     list_accounts,
     resolve_account,
+    resolve_last_selected_account,
     save_account,
+    set_last_selected_account,
 )
 from .client import DQSGClient
 from .crypto import STARTUP_KEY, xor_bytes
@@ -165,12 +167,28 @@ def _create_saved_account(args) -> dict:
     return saved
 
 
+def _mark_last_selected_account(record: dict, args):
+    try:
+        set_last_selected_account(record["user_id"], path=_store_path(args))
+    except AccountStoreError as exc:
+        raise SystemExit(str(exc)) from exc
+
+
 def _resolve_account_arg_or_prompt(args) -> dict:
     if getattr(args, "account", None):
         try:
-            return resolve_account(args.account, path=_store_path(args))
+            record = resolve_account(args.account, path=_store_path(args))
+            _mark_last_selected_account(record, args)
+            return record
         except AccountStoreError as exc:
             raise SystemExit(str(exc)) from exc
+
+    try:
+        record = resolve_last_selected_account(path=_store_path(args))
+    except AccountStoreError as exc:
+        raise SystemExit(str(exc)) from exc
+    if record is not None:
+        return record
 
     try:
         records = list_accounts(path=_store_path(args))
@@ -189,7 +207,9 @@ def _resolve_account_arg_or_prompt(args) -> dict:
         raise SystemExit("Invalid selection.")
     selected = int(raw)
     if 1 <= selected <= len(records):
-        return records[selected - 1]
+        record = records[selected - 1]
+        _mark_last_selected_account(record, args)
+        return record
     if selected == len(records) + 1:
         return _create_saved_account(args)
     raise SystemExit("Selection out of range.")
@@ -197,7 +217,7 @@ def _resolve_account_arg_or_prompt(args) -> dict:
 
 def _save_client_account(client: DQSGClient, args, *, progress=None, last_command=None, snapshot=None):
     try:
-        return save_account(
+        saved = save_account(
             client.export_account_record(),
             path=_store_path(args),
             label=getattr(args, "label", None),
@@ -205,6 +225,8 @@ def _save_client_account(client: DQSGClient, args, *, progress=None, last_comman
             last_command=last_command,
             snapshot=snapshot,
         )
+        _mark_last_selected_account(saved, args)
+        return saved
     except (AccountStoreError, ValueError) as exc:
         raise SystemExit(str(exc)) from exc
 
@@ -1282,6 +1304,7 @@ def cmd_import(args):
             progress="imported",
             last_command="import",
         )
+        _mark_last_selected_account(saved, args)
     except (AccountStoreError, ValueError) as exc:
         raise SystemExit(str(exc)) from exc
 
