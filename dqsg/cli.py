@@ -3660,9 +3660,6 @@ _JQHD_XL_CONFIGS = {
         "stage": 30261101,
         "template_stage": 30161101,
         "template_file": "stage_30161101_xl.bin",
-        "start_body": bytes.fromhex(
-            "6dbfcd0101000000016dbfcd013b400a007f1300000000000089e5a6be9d0100004ff9babb02000000"
-        ),
         "fetch_multi_data_body": bytes.fromhex("6dbfcd0100020000007b7d"),
     },
 }
@@ -3986,7 +3983,10 @@ def _run_xl_command(
         _check(resp, "matching_room/fetch_multi_data")
 
         print(f"\n=== in_game/start ({stage_id}) ===")
-        resp = client.in_game_start_raw(config["start_body"])
+        if config.get("start_body") is not None:
+            resp = client.in_game_start_raw(config["start_body"])
+        else:
+            resp = client.in_game_start(stage_id, deck_index=1)
         _check(resp, "in_game/start")
 
         print(f"\n=== in_game/result ({stage_id}) ===")
