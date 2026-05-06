@@ -962,7 +962,7 @@ def _submit_in_game_result_with_resume(
         Used for raw-body submissions (juxiang, yc dungeons).
       - stage_master_id/template_stage_id: template-based submissions.
     """
-    max_attempts = 20
+    max_attempts = 3
     current_session_id = in_game_session_id
     last_exc = None
 
@@ -3047,13 +3047,15 @@ def cmd_jqh(args):
     _run_story_stage_command(args, hard=True)
 
 
+_JQHD_MAX_CHAPTER = 13
+
 _JQHD_STAGE_IDS = {
     (chapter, 1): 30242100 + chapter
-    for chapter in range(1, 7)
+    for chapter in range(1, _JQHD_MAX_CHAPTER + 1)
 }
 _JQHD_STAGE_IDS.update({
     (chapter, 2): 30242200 + chapter
-    for chapter in range(1, 7)
+    for chapter in range(1, _JQHD_MAX_CHAPTER + 1)
 })
 
 _JQHD_TEMPLATE_STAGE_IDS = {
@@ -3593,6 +3595,18 @@ _HD_STAGE_IDS = {
             "default_score": 11000,
         },
     },
+    "cjmwmg": {
+        1: {
+            "stage": 50151011,
+            "template": 50151011,
+            "default_score": 15651,
+        },
+        2: {
+            "stage": 50151021,
+            "template": 50151021,
+            "default_score": 18443,
+        },
+    },
     "qdjf": {
         1: {"stage": 30144101, "template": 30144101, "default_score": 8000},
         2: {"stage": 30144201, "template": 30144101, "default_score": 24000},
@@ -3767,6 +3781,9 @@ def cmd_hd(args):
 
     event_type = args.type
     level_str = args.level
+    times = args.times
+    if times <= 0:
+        raise SystemExit("--times must be positive.")
     if event_type in {"jx", "xmss", "shn"} and level_str is None:
         level_str = "1"
     if level_str is None:
@@ -3787,12 +3804,18 @@ def cmd_hd(args):
     stage_id = stage_config["stage"]
     template_id = stage_config["template"]
     score = args.score if args.score is not None else stage_config["default_score"]
-    type_names = {"qdjf": "强敌交锋", "jx": "巨像", "xmss": "小魔术师", "shn": "食火鸟"}
+    type_names = {
+        "qdjf": "强敌交锋",
+        "jx": "巨像",
+        "xmss": "小魔术师",
+        "shn": "食火鸟",
+        "cjmwmg": "超级魔物猛攻",
+    }
     display_name = type_names.get(event_type, event_type)
 
     client, record = _load_client_for_account(args)
     print(f"=== account {_account_ref(record)} ===")
-    print(f"=== 活动 {display_name} Lv.{level} — score={score} ===")
+    print(f"=== 活动 {display_name} Lv.{level} — score={score} ×{times} ===")
 
     print("\n=== masterdata/get_version ===")
     resp = client.masterdata_get_version()
@@ -3803,28 +3826,31 @@ def cmd_hd(args):
     _check(resp, "login/login")
     login_snapshot = _build_account_snapshot_from_login(client)
 
-    _run_scored_dungeon(
-        client,
-        stage_id,
-        build_result_body=lambda sid: load_scored_result(
-            stage_master_id=stage_id,
-            score=score,
-            template_stage_id=template_id,
-            in_game_session_id=sid,
-            score_mirror_offsets=stage_config.get("score_mirror_offsets"),
-            template_file=stage_config.get("template_file"),
-        ),
-        login_resp=resp,
-    )
+    for idx in range(1, times + 1):
+        if times > 1:
+            print(f"\n=== HD run {idx}/{times} ===")
+        _run_scored_dungeon(
+            client,
+            stage_id,
+            build_result_body=lambda sid: load_scored_result(
+                stage_master_id=stage_id,
+                score=score,
+                template_stage_id=template_id,
+                in_game_session_id=sid,
+                score_mirror_offsets=stage_config.get("score_mirror_offsets"),
+                template_file=stage_config.get("template_file"),
+            ),
+            login_resp=resp if idx == 1 else None,
+        )
 
     saved = _save_client_account(
         client,
         args,
-        last_command=f"hd-{event_type}-{level}",
+        last_command=f"hd-{event_type}-{level}x{times}",
         snapshot=login_snapshot,
     )
     print(f"\n{'='*50}")
-    print(f"活动 {display_name} Lv.{level} complete. Score: {score}")
+    print(f"活动 {display_name} Lv.{level} complete. Score: {score}. Runs: {times}")
     _print_saved_account(saved, _store_path(args))
     print("=" * 50)
 
@@ -4233,9 +4259,13 @@ def build_parser():
         help="Run 活动 (Event) scored battles",
     )
     hd_parser.add_argument("--account", help="Saved account user_id, label, or latest")
+    hd_parser.add_argument("--times", type=int, default=1, help="Repeat the hd stage this many times")
     hd_parser.add_argument(
-        "type", choices=["qdjf", "jx", "xmss", "shn"],
-        help="Event type: qdjf (强敌交锋), jx (巨像), xmss (小魔术师), shn (食火鸟)",
+        "type", choices=["qdjf", "jx", "xmss", "shn", "cjmwmg"],
+        help=(
+            "Event type: qdjf (强敌交锋), jx (巨像), xmss (小魔术师), "
+            "shn (食火鸟), cjmwmg (超级魔物猛攻)"
+        ),
     )
     hd_parser.add_argument(
         "level",
@@ -4245,7 +4275,7 @@ def build_parser():
     )
     hd_parser.add_argument(
         "--score", type=int, default=None,
-        help="Score to submit; defaults: qdjf 1=8000, 2=24000, 3=72000, 4=216000; jx=18000; xmss/shn=11000",
+        help="Score to submit; defaults: qdjf 1=8000, 2=24000, 3=72000, 4=216000; jx=18000; xmss/shn=11000; cjmwmg 1=15651, 2=18443",
     )
     hd_parser.set_defaults(func=cmd_hd)
 

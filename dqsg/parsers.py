@@ -284,6 +284,13 @@ def _read_list(r: BytesReader, read_item) -> list[dict]:
     return [read_item(r) for _ in range(r.read_int())]
 
 
+def _read_stage_result_event_survival(r: BytesReader) -> dict:
+    return {
+        "BeforeRank": r.read_nullable_int(),
+        "AfterRank": r.read_nullable_int(),
+    }
+
+
 def _read_stage_result(r: BytesReader) -> dict:
     stage_result = {
         "Gold": r.read_int(),
@@ -299,8 +306,7 @@ def _read_stage_result(r: BytesReader) -> dict:
     }
     stage_result["EventSurvival"] = None
     if r.read_bool():
-        stage_result["EventSurvival"] = {"_unparsed": True}
-        raise ValueError("StageResultEventSurvival parsing is not implemented")
+        stage_result["EventSurvival"] = _read_stage_result_event_survival(r)
     stage_result["CampaignDropContentList"] = _read_list(r, _read_content)
     return stage_result
 
