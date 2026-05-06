@@ -3191,6 +3191,14 @@ def cmd_jqhd(args):
         cmd_jqhd_qd(args, args.end_stage, args.extra_stage)
         return
 
+    if args.start_stage.lower() == "xl":
+        if not args.end_stage:
+            raise SystemExit("jqhd xl requires a level. Use format like: jqhd xl 1")
+        if args.extra_stage:
+            raise SystemExit("jqhd xl accepts one level. Use format like: jqhd xl 1")
+        cmd_jqhd_xl(args, args.end_stage)
+        return
+
     if args.start_stage.lower() == "qdtz":
         raise SystemExit("jqhd qdtz was renamed. Use format like: jqhd qd l 1")
 
@@ -3647,6 +3655,18 @@ _XL_CONFIGS = {
     },
 }
 
+_JQHD_XL_CONFIGS = {
+    1: {
+        "stage": 30261101,
+        "template_stage": 30161101,
+        "template_file": "stage_30161101_xl.bin",
+        "start_body": bytes.fromhex(
+            "6dbfcd0101000000016dbfcd013b400a007f1300000000000089e5a6be9d0100004ff9babb02000000"
+        ),
+        "fetch_multi_data_body": bytes.fromhex("6dbfcd0100020000007b7d"),
+    },
+}
+
 
 def cmd_yc(args):
     """Run a 养成 (Growth) dungeon with a specified score, or skip (tg)."""
@@ -3925,20 +3945,29 @@ def cmd_tz(args):
     print("=" * 50)
 
 
-def cmd_xl(args):
-    """Run the recorded 协力 stage with captured raw start + result bodies."""
+def _run_xl_command(
+    args,
+    *,
+    configs: dict,
+    level: int,
+    command_name: str,
+    display_name: str,
+    progress: str = None,
+    last_command: str = None,
+):
     from .battle_templates import load_battle_result
 
     client, record = _load_client_for_account(args)
-    level = int(args.level)
     times = args.times
-    config = _XL_CONFIGS.get(level)
+    if times <= 0:
+        raise SystemExit("--times must be positive.")
+    config = configs.get(level)
     if config is None:
-        raise SystemExit(f"Unknown xl level: {level}. Available: {sorted(_XL_CONFIGS)}")
+        raise SystemExit(f"Unknown {command_name} level: {level}. Available: {sorted(configs)}")
     stage_id = config["stage"]
 
     print(f"=== account {_account_ref(record)} ===")
-    print(f"=== 协力 (XL {level}) ×{times} ===")
+    print(f"=== {display_name} {level} ({stage_id}) ×{times} ===")
 
     print("\n=== masterdata/get_version ===")
     resp = client.masterdata_get_version()
@@ -3975,13 +4004,42 @@ def cmd_xl(args):
     saved = _save_client_account(
         client,
         args,
-        last_command=f"xl-{level}",
+        progress=progress,
+        last_command=last_command if last_command is not None else f"{command_name}-{level}x{times}",
         snapshot=login_snapshot,
     )
     print(f"\n{'='*50}")
-    print(f"协力 XL {level} complete. Runs: {times}")
+    print(f"{display_name} {level} complete. Runs: {times}")
     _print_saved_account(saved, _store_path(args))
     print("=" * 50)
+
+
+def cmd_xl(args):
+    """Run the recorded 协力 stage with captured raw start + result bodies."""
+    level = int(args.level)
+    _run_xl_command(
+        args,
+        configs=_XL_CONFIGS,
+        level=level,
+        command_name="xl",
+        display_name="协力 XL",
+        last_command=f"xl-{level}",
+    )
+
+
+def cmd_jqhd_xl(args, level_text: str):
+    if not level_text.isdigit():
+        raise SystemExit("Invalid jqhd xl level. Use format like: jqhd xl 1")
+    level = int(level_text)
+    _run_xl_command(
+        args,
+        configs=_JQHD_XL_CONFIGS,
+        level=level,
+        command_name="jqhd xl",
+        display_name="活动协力 XL",
+        progress=f"jqhd_xl_{level}_complete",
+        last_command=f"jqhd-xl-{level}x{args.times}",
+    )
 
 
 def cmd_juxiang(args):
@@ -4189,7 +4247,7 @@ def build_parser():
 
     jqhd_parser = subparsers.add_parser(
         "jqhd",
-        help="Run recorded event stages; e.g. jqhd 1-1 or jqhd qd l 1",
+        help="Run recorded event stages; e.g. jqhd 1-1, jqhd qd l 1, or jqhd xl 1",
     )
     jqhd_parser.add_argument("--account", help="Saved account user_id, label, or latest")
     jqhd_parser.add_argument(
@@ -4197,8 +4255,8 @@ def build_parser():
         help="Score override for jqhd qd; defaults: 1=8001, 2=24000, 3=72000, 4=216000, 5=54001",
     )
     jqhd_parser.add_argument("--times", type=int, default=1, help="Repeat each jqhd stage this many times")
-    jqhd_parser.add_argument("start_stage", help="Event stage key such as 1-1, or qd")
-    jqhd_parser.add_argument("end_stage", nargs="?", help="Optional range end such as 1-10, or qd type")
+    jqhd_parser.add_argument("start_stage", help="Event stage key such as 1-1, qd, or xl")
+    jqhd_parser.add_argument("end_stage", nargs="?", help="Optional range end such as 1-10, qd type, or xl level")
     jqhd_parser.add_argument("extra_stage", nargs="?", help="qd level, e.g. jqhd qd l 1")
     jqhd_parser.set_defaults(func=cmd_jqhd)
 
