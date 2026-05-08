@@ -3888,6 +3888,9 @@ def cmd_tz(args):
 
     zone = args.zone
     element = args.element
+    times = args.times
+    if times <= 0:
+        raise SystemExit("--times must be positive.")
     if element is None or args.level is None:
         raise SystemExit("tz st requires: tz st hb 1")
     try:
@@ -3918,7 +3921,7 @@ def cmd_tz(args):
 
     client, record = _load_client_for_account(args)
     print(f"=== account {_account_ref(record)} ===")
-    print(f"=== 挑战 {display_zone} {display_element} Lv.{level} ===")
+    print(f"=== 挑战 {display_zone} {display_element} Lv.{level} ×{times} ===")
 
     print("\n=== masterdata/get_version ===")
     resp = client.masterdata_get_version()
@@ -3929,25 +3932,28 @@ def cmd_tz(args):
     _check(resp, "login/login")
     login_snapshot = _build_account_snapshot_from_login(client)
 
-    _run_scored_dungeon(
-        client,
-        stage_id,
-        build_result_body=lambda sid: load_battle_result(
-            stage_master_id=stage_id,
-            template_stage_id=template_id,
-            in_game_session_id=sid,
-        ),
-        login_resp=resp,
-    )
+    for idx in range(1, times + 1):
+        if times > 1:
+            print(f"\n=== TZ run {idx}/{times} ===")
+        _run_scored_dungeon(
+            client,
+            stage_id,
+            build_result_body=lambda sid: load_battle_result(
+                stage_master_id=stage_id,
+                template_stage_id=template_id,
+                in_game_session_id=sid,
+            ),
+            login_resp=resp if idx == 1 else None,
+        )
 
     saved = _save_client_account(
         client,
         args,
-        last_command=f"tz-{zone}-{element}-{level}",
+        last_command=f"tz-{zone}-{element}-{level}x{times}",
         snapshot=login_snapshot,
     )
     print(f"\n{'='*50}")
-    print(f"挑战 {display_zone} {display_element} Lv.{level} complete.")
+    print(f"挑战 {display_zone} {display_element} Lv.{level} complete. Runs: {times}")
     _print_saved_account(saved, _store_path(args))
     print("=" * 50)
 
@@ -4352,6 +4358,7 @@ def build_parser():
         help="Run 挑战 dungeons",
     )
     tz_parser.add_argument("--account", help="Saved account user_id, label, or latest")
+    tz_parser.add_argument("--times", type=int, default=1, help="Repeat the tz stage this many times")
     tz_parser.add_argument(
         "zone",
         choices=["st"],
