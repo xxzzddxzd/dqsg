@@ -308,7 +308,7 @@ static void logByteArray(const char *label, Il2CppByteArray *arr) {
     NSLog(@"#pc [crypto] %s (%llu bytes) = %@", label, arr->max_length, hexFromBytes(arr->items, (int)arr->max_length));
 }
 
-// SVAPI.get_StartupKey — RVA 0x54A8650 (1.0.3)
+// SVAPI.get_StartupKey — RVA 0x54A960C (1.0.4)
 typedef Il2CppByteArray* (*GetStartupKey_t)(void *method);
 static GetStartupKey_t orig_GetStartupKey;
 static Il2CppByteArray* hook_GetStartupKey(void *method) {
@@ -320,7 +320,7 @@ static Il2CppByteArray* hook_GetStartupKey(void *method) {
     return key;
 }
 
-// DMCryptography.EncryptRequest — RVA 0x5463148 (1.0.3)
+// DMCryptography.EncryptRequest — RVA 0x5462D7C (1.0.4)
 typedef Il2CppByteArray* (*EncryptRequest_t)(Il2CppByteArray *sessionKey, Il2CppString *requestPath, Il2CppByteArray *data, void *method);
 static EncryptRequest_t orig_EncryptRequest;
 static Il2CppByteArray* hook_EncryptRequest(Il2CppByteArray *sessionKey, Il2CppString *requestPath, Il2CppByteArray *data, void *method) {
@@ -341,7 +341,7 @@ static Il2CppByteArray* hook_EncryptRequest(Il2CppByteArray *sessionKey, Il2CppS
     return result;
 }
 
-// DMCryptography.DecryptResponse — RVA 0x5463A70 (1.0.3)
+// DMCryptography.DecryptResponse — RVA 0x54636A4 (1.0.4)
 typedef bool (*DecryptResponse_t)(Il2CppByteArray *sessionKey, Il2CppString *requestPath, Il2CppByteArray *responseData, Il2CppByteArray **decrypted, void *method);
 static DecryptResponse_t orig_DecryptResponse;
 static bool hook_DecryptResponse(Il2CppByteArray *sessionKey, Il2CppString *requestPath, Il2CppByteArray *responseData, Il2CppByteArray **decrypted, void *method) {
@@ -358,7 +358,7 @@ static bool hook_DecryptResponse(Il2CppByteArray *sessionKey, Il2CppString *requ
     return ok;
 }
 
-// DMCryptography.RandomBytes — RVA 0x5462A1C (1.0.3)
+// DMCryptography.RandomBytes — RVA 0x5462650 (1.0.4)
 typedef Il2CppByteArray* (*RandomBytes_t)(int len, void *method);
 static RandomBytes_t orig_RandomBytes;
 static Il2CppByteArray* hook_RandomBytes(int len, void *method) {
@@ -367,7 +367,7 @@ static Il2CppByteArray* hook_RandomBytes(int len, void *method) {
     return result;
 }
 
-// DMCryptography.PublicEncrypt — RVA 0x5462AC4 (1.0.3)
+// DMCryptography.PublicEncrypt — RVA 0x54626F8 (1.0.4)
 typedef Il2CppByteArray* (*PublicEncrypt_t)(Il2CppByteArray *data, void *method);
 static PublicEncrypt_t orig_PublicEncrypt;
 static Il2CppByteArray* hook_PublicEncrypt(Il2CppByteArray *data, void *method) {
@@ -378,7 +378,7 @@ static Il2CppByteArray* hook_PublicEncrypt(Il2CppByteArray *data, void *method) 
     return result;
 }
 
-// DMCryptography.HmacSha1 — RVA 0x5462B58 (1.0.3)
+// DMCryptography.HmacSha1 — RVA 0x546278C (1.0.4)
 typedef Il2CppByteArray* (*HmacSha1_t)(void *dataStream, Il2CppByteArray *key, void *method);
 static HmacSha1_t orig_HmacSha1;
 static Il2CppByteArray* hook_HmacSha1(void *dataStream, Il2CppByteArray *key, void *method) {
@@ -386,7 +386,7 @@ static Il2CppByteArray* hook_HmacSha1(void *dataStream, Il2CppByteArray *key, vo
     return orig_HmacSha1(dataStream, key, method);
 }
 
-// DMHttpApi.<>c__DisplayClass17_0.<Login>b__0 — RVA 0x5468144 (1.0.3)
+// DMHttpApi.<>c__DisplayClass17_0.<Login>b__0 — RVA 0x5467D8C (1.0.4)
 typedef void (*LoginCallback_t)(void *thisObj, int64_t userId, Il2CppByteArray *commonKey, void *method);
 static LoginCallback_t orig_LoginCallback;
 static void hook_LoginCallback(void *thisObj, int64_t userId, Il2CppByteArray *commonKey, void *method) {
@@ -396,7 +396,7 @@ static void hook_LoginCallback(void *thisObj, int64_t userId, Il2CppByteArray *c
     orig_LoginCallback(thisObj, userId, commonKey, method);
 }
 
-// Lib.XorBytes — RVA 0x54684E0 (1.0.3)
+// Lib.XorBytes — RVA 0x54680CC (1.0.4)
 typedef Il2CppByteArray* (*XorBytes_t)(Il2CppByteArray *l, Il2CppByteArray *r, void *method);
 static XorBytes_t orig_XorBytes;
 static Il2CppByteArray* hook_XorBytes(Il2CppByteArray *l, Il2CppByteArray *r, void *method) {
@@ -410,7 +410,7 @@ static Il2CppByteArray* hook_XorBytes(Il2CppByteArray *l, Il2CppByteArray *r, vo
     return result;
 }
 
-// DMCryptography.SessionDecrypt — RVA 0x5462C60 (1.0.3)
+// DMCryptography.SessionDecrypt — RVA 0x5462894 (1.0.4)
 typedef Il2CppByteArray* (*SessionDecrypt_t)(Il2CppByteArray *data, void *method);
 static SessionDecrypt_t orig_SessionDecrypt;
 static Il2CppByteArray* hook_SessionDecrypt(Il2CppByteArray *data, void *method) {
@@ -430,15 +430,15 @@ static void onImageLoaded(const struct mach_header *mh, intptr_t slide) {
     g_unityBase = (uintptr_t)mh;
     NSLog(@"#pc [crypto] UnityFramework loaded at 0x%lx (slide 0x%lx)", (unsigned long)g_unityBase, (long)slide);
 
-    MSHookFunction((void *)(g_unityBase + 0x54A8650), (void *)hook_GetStartupKey, (void **)&orig_GetStartupKey);
-    MSHookFunction((void *)(g_unityBase + 0x5463148), (void *)hook_EncryptRequest, (void **)&orig_EncryptRequest);
-    MSHookFunction((void *)(g_unityBase + 0x5463A70), (void *)hook_DecryptResponse, (void **)&orig_DecryptResponse);
-    MSHookFunction((void *)(g_unityBase + 0x5462A1C), (void *)hook_RandomBytes, (void **)&orig_RandomBytes);
-    MSHookFunction((void *)(g_unityBase + 0x5462AC4), (void *)hook_PublicEncrypt, (void **)&orig_PublicEncrypt);
-    MSHookFunction((void *)(g_unityBase + 0x5462B58), (void *)hook_HmacSha1, (void **)&orig_HmacSha1);
-    MSHookFunction((void *)(g_unityBase + 0x5468144), (void *)hook_LoginCallback, (void **)&orig_LoginCallback);
-    MSHookFunction((void *)(g_unityBase + 0x54684E0), (void *)hook_XorBytes, (void **)&orig_XorBytes);
-    MSHookFunction((void *)(g_unityBase + 0x5462C60), (void *)hook_SessionDecrypt, (void **)&orig_SessionDecrypt);
+    MSHookFunction((void *)(g_unityBase + 0x54A960C), (void *)hook_GetStartupKey, (void **)&orig_GetStartupKey);
+    MSHookFunction((void *)(g_unityBase + 0x5462D7C), (void *)hook_EncryptRequest, (void **)&orig_EncryptRequest);
+    MSHookFunction((void *)(g_unityBase + 0x54636A4), (void *)hook_DecryptResponse, (void **)&orig_DecryptResponse);
+    MSHookFunction((void *)(g_unityBase + 0x5462650), (void *)hook_RandomBytes, (void **)&orig_RandomBytes);
+    MSHookFunction((void *)(g_unityBase + 0x54626F8), (void *)hook_PublicEncrypt, (void **)&orig_PublicEncrypt);
+    MSHookFunction((void *)(g_unityBase + 0x546278C), (void *)hook_HmacSha1, (void **)&orig_HmacSha1);
+    MSHookFunction((void *)(g_unityBase + 0x5467D8C), (void *)hook_LoginCallback, (void **)&orig_LoginCallback);
+    MSHookFunction((void *)(g_unityBase + 0x54680CC), (void *)hook_XorBytes, (void **)&orig_XorBytes);
+    MSHookFunction((void *)(g_unityBase + 0x5462894), (void *)hook_SessionDecrypt, (void **)&orig_SessionDecrypt);
 
     NSLog(@"#pc [crypto] hooks installed (EncryptRequest, DecryptResponse, StartupKey, HmacSha1, PublicEncrypt, LoginCallback, XorBytes, SessionDecrypt)");
 }
@@ -449,7 +449,7 @@ static void onImageLoaded(const struct mach_header *mh, intptr_t slide) {
 
 %ctor {
     NSLog(@"#pc ========================================");
-    NSLog(@"#pc DQSG Patch v17 loaded");
+    NSLog(@"#pc DQSG Patch v18 loaded (1.0.4)");
     NSLog(@"#pc ========================================");
 
     MSHookFunction((void *)fork, (void *)hook_fork, (void **)&orig_fork);
