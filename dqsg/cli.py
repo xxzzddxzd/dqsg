@@ -3339,9 +3339,13 @@ def cmd_ad(args):
         last_command = "ad-tx"
         complete_text = "Advertisement expedition reward request complete."
     elif action == "store":
-        store_exchanges = [104000302, 104000301]
-        for exchange_master_id in store_exchanges:
-            count = 1
+        store_exchanges = [
+            (104000302, 1),
+            (104000301, 1),
+            (2, 2),
+            (3, 1),
+        ]
+        for exchange_master_id, count in store_exchanges:
             print(f"\n=== shop_exchange/exchange ({exchange_master_id} x{count}) ===")
             resp = client.shop_exchange_exchange(exchange_master_id, count)
             _check(resp, "shop_exchange/exchange")
