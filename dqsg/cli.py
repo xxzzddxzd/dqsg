@@ -3631,9 +3631,15 @@ _TZ_STAGE_IDS = {
     "st": {
         "hb": {
             1: {"stage": 10041011, "template": 10102101},
+            2: {"stage": 10041012, "template": 10102101},
         },
         "em": {
             1: {"stage": 10041031, "template": 10102101},
+            2: {"stage": 10041032, "template": 10102101},
+        },
+        "yx": {
+            1: {"stage": 10041041, "template": 10102101},
+            2: {"stage": 10041042, "template": 10102101},
         },
     },
 }
@@ -3906,7 +3912,7 @@ def cmd_tz(args):
     stage_id = stage_config["stage"]
     template_id = stage_config["template"]
     zone_names = {"st": "饲堂"}
-    element_names = {"hb": "寒冰", "em": "恶魔"}
+    element_names = {"hb": "寒冰", "em": "恶魔", "yx": "原型杀戮者"}
     display_zone = zone_names.get(zone, zone)
     display_element = element_names.get(element, element)
 
@@ -4354,13 +4360,13 @@ def build_parser():
     tz_parser.add_argument(
         "element",
         nargs="?",
-        choices=["hb", "em"],
-        help="属性: hb (寒冰), em (恶魔); only used for st",
+        choices=["hb", "em", "yx"],
+        help="属性: hb (寒冰), em (恶魔), yx (原型杀戮者); only used for st",
     )
     tz_parser.add_argument(
         "level",
         nargs="?",
-        choices=["1"],
+        choices=["1", "2"],
         help="Level; only used for st",
     )
     tz_parser.set_defaults(func=cmd_tz)
