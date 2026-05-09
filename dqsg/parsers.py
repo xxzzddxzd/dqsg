@@ -710,6 +710,22 @@ def build_advertisement_receive_reward_ad_chance_orb_request(orb_master_id: int 
     return build_single_int_request(orb_master_id)
 
 
+def build_expedition_receive_reward_request(expedition_id: int = 1) -> bytes:
+    return build_single_int_request(expedition_id)
+
+
+def build_expedition_do_expedition_request(
+    expedition_id: int = 1,
+    expedition_master_id: int = 105,
+    user_style_id: int = 0,
+) -> bytes:
+    w = BytesWriter()
+    w.write_int(expedition_id)
+    w.write_int(expedition_master_id)
+    w.write_int(user_style_id)
+    return w.to_bytes()
+
+
 def build_shop_exchange_exchange_request(exchange_master_id: int, count: int = 1) -> bytes:
     w = BytesWriter()
     w.write_int(exchange_master_id)

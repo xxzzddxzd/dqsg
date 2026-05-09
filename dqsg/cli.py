@@ -54,6 +54,52 @@ _TRACKED_GROWTH_MATERIAL_IDS = (
     110420001,
     110410001,
 )
+_DAILY_HOME_DEVICE_NAME = "iPhone"
+_DAILY_HOME_DEVICE_TOKEN = (
+    "cMh2rR7hHkr3iUsvV5YyMa:"
+    "APA91bE1hTj2f0VY0qqjmThuO709X0Agk39KxzBCp8JPN5oN6trA8Ca1fgHo1AQLkViZjBohSZ8kY6cz"
+    "Cf0yT4LcBoLTK9PHYiAnmKG2BZehDZLksDadyY0"
+)
+_DAILY_HOME_FIREBASE_ID = "3F2B3486E7DA4BADAAC2225E2B5FC775"
+_DAILY_HOME_ADJUST_ID = "9027cf9dd1927e65818a7cc24bce9e71"
+_DAILY_EXPEDITION_ID = 1
+_DAILY_EXPEDITION_MASTER_ID = 105
+_DAILY_EXPEDITION_USER_STYLE_ID = 0
+_AD_STORE_EXCHANGES = [
+    (104000302, 1),
+    (104000301, 1),
+    (2, 2),
+    (3, 1),
+]
+_DAILY_NOTICE_IDS = [
+    89784,
+    23615,
+    91104,
+    87418,
+    86697,
+    8306,
+    53147,
+    27765,
+    70390,
+    83110,
+    76046,
+    64769,
+    71485,
+    74792,
+    62105,
+    2509,
+    17572,
+    13359,
+    32632,
+    13596,
+    48176,
+    19409,
+    7556,
+    68245,
+    80809,
+    62197,
+    90076,
+]
 
 _GREEN = "\033[32m"
 _RED = "\033[31m"
@@ -356,6 +402,104 @@ def _prepare_saved_account_runtime(args, *, record: dict | None = None, client: 
     _check(login_resp, "login/login")
     login_snapshot = _build_account_snapshot_from_login(client)
     return client, record, login_resp, login_snapshot
+
+
+def _run_daily_home_fetch_info(client: DQSGClient, step: _StepPrinter | None = None):
+    if step:
+        step("home/fetch_info")
+    else:
+        print("\n=== home/fetch_info ===")
+    resp = client.home_fetch_info(
+        device_name=_DAILY_HOME_DEVICE_NAME,
+        device_token=_DAILY_HOME_DEVICE_TOKEN,
+        firebase_id=_DAILY_HOME_FIREBASE_ID,
+        adjust_id=_DAILY_HOME_ADJUST_ID,
+    )
+    _check(resp, "home/fetch_info")
+    return resp
+
+
+def _run_daily_metric_device(client: DQSGClient, step: _StepPrinter | None = None):
+    if step:
+        step("metric/device")
+    else:
+        print("\n=== metric/device ===")
+    resp = client.metric_device()
+    _check(resp, "metric/device")
+    return resp
+
+
+def _run_daily_notice_read_all_normal_notices(client: DQSGClient, step: _StepPrinter | None = None):
+    if step:
+        step("notice/read_all_normal_notices")
+    else:
+        print("\n=== notice/read_all_normal_notices ===")
+    resp = client.notice_read_all_normal_notices(_DAILY_NOTICE_IDS)
+    _check(resp, "notice/read_all_normal_notices")
+    return resp
+
+
+def _run_daily_expedition_receive_reward(client: DQSGClient, step: _StepPrinter | None = None):
+    if step:
+        step("expedition/receive_reward")
+    else:
+        print("\n=== expedition/receive_reward ===")
+    resp = client.expedition_receive_reward(_DAILY_EXPEDITION_ID)
+    _check(resp, "expedition/receive_reward")
+    return resp
+
+
+def _run_daily_expedition_do_expedition(client: DQSGClient, step: _StepPrinter | None = None):
+    if step:
+        step("expedition/do_expedition")
+    else:
+        print("\n=== expedition/do_expedition ===")
+    resp = client.expedition_do_expedition(
+        expedition_id=_DAILY_EXPEDITION_ID,
+        expedition_master_id=_DAILY_EXPEDITION_MASTER_ID,
+        user_style_id=_DAILY_EXPEDITION_USER_STYLE_ID,
+    )
+    _check(resp, "expedition/do_expedition")
+    return resp
+
+
+def _run_ad_store_exchanges(client: DQSGClient):
+    for exchange_master_id, count in _AD_STORE_EXCHANGES:
+        print(f"\n=== shop_exchange/exchange ({exchange_master_id} x{count}) ===")
+        resp = client.shop_exchange_exchange(exchange_master_id, count)
+        _check(resp, "shop_exchange/exchange")
+
+
+def _run_daily_ad_store(client: DQSGClient, step: _StepPrinter | None = None):
+    if step:
+        step("ad store")
+    else:
+        print("\n=== ad store ===")
+    _run_ad_store_exchanges(client)
+
+
+def cmd_daily(args):
+    client, record, login_resp, login_snapshot = _prepare_saved_account_runtime(args)
+    step = _StepPrinter(6)
+
+    _run_daily_home_fetch_info(client, step)
+    _run_daily_metric_device(client, step)
+    _run_daily_notice_read_all_normal_notices(client, step)
+    _run_daily_expedition_receive_reward(client, step)
+    _run_daily_expedition_do_expedition(client, step)
+    _run_daily_ad_store(client, step)
+
+    saved = _save_client_account(
+        client,
+        args,
+        last_command="daily",
+        snapshot=login_snapshot,
+    )
+    print("\n" + "=" * 50)
+    print("Daily requests complete.")
+    _print_saved_account(saved, _store_path(args))
+    print("=" * 50)
+    return saved
 
 
 def _build_account_snapshot_from_login(client: DQSGClient) -> dict | None:
@@ -3339,16 +3483,7 @@ def cmd_ad(args):
         last_command = "ad-tx"
         complete_text = "Advertisement expedition reward request complete."
     elif action == "store":
-        store_exchanges = [
-            (104000302, 1),
-            (104000301, 1),
-            (2, 2),
-            (3, 1),
-        ]
-        for exchange_master_id, count in store_exchanges:
-            print(f"\n=== shop_exchange/exchange ({exchange_master_id} x{count}) ===")
-            resp = client.shop_exchange_exchange(exchange_master_id, count)
-            _check(resp, "shop_exchange/exchange")
+        _run_ad_store_exchanges(client)
         last_command = "ad-store"
         complete_text = "Advertisement store exchanges complete."
     elif action == "gacha":
@@ -3671,6 +3806,12 @@ _JQHD_XL_CONFIGS = {
         "template_stage": 30161101,
         "template_file": "stage_30161101_xl.bin",
         "fetch_multi_data_body": bytes.fromhex("6dbfcd0100020000007b7d"),
+    },
+    2: {
+        "stage": 30261201,
+        "template_stage": 30161101,
+        "template_file": "stage_30161101_xl.bin",
+        "fetch_multi_data_body": bytes.fromhex("d1bfcd0100020000007b7d"),
     },
 }
 
@@ -4123,6 +4264,9 @@ def build_parser():
     status_parser.add_argument("--account", help="Saved account user_id, label, or latest")
     status_parser.set_defaults(func=cmd_status)
 
+    daily_parser = subparsers.add_parser("daily", help="Run daily home and device requests for a saved account")
+    daily_parser.add_argument("--account", help="Saved account user_id, label, or latest")
+    daily_parser.set_defaults(func=cmd_daily)
 
     live_parser = subparsers.add_parser("live", help="Run all registered saved-account flows in numeric order")
     live_parser.add_argument("--account", help="Saved account user_id, label, or latest")

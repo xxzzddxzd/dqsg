@@ -51,6 +51,8 @@ from .parsers import (
     build_user_rank_receive_reward_request,
     build_advertisement_receive_reward_chance_point_card_point_request,
     build_advertisement_receive_reward_ad_chance_orb_request,
+    build_expedition_receive_reward_request,
+    build_expedition_do_expedition_request,
     build_shop_exchange_exchange_request,
     build_profile_fetch_request,
     build_album_receive_orb_rank_reward_request,
@@ -361,8 +363,20 @@ class DQSGClient:
         self.debug_log(f"  <- {len(data)} bytes")
         return data
 
-    def home_fetch_info(self):
-        req = build_home_info_request()
+    def home_fetch_info(self, device_name: str = "iPhone",
+                        device_token: str = None,
+                        advertising_id: str = None,
+                        is_tracking: bool = None,
+                        firebase_id: str = None,
+                        adjust_id: str = None):
+        req = build_home_info_request(
+            device_name=device_name,
+            device_token=device_token,
+            advertising_id=advertising_id,
+            is_tracking=is_tracking,
+            firebase_id=firebase_id,
+            adjust_id=adjust_id,
+        )
         data = self.call_authenticated("home/fetch_info", req)
         resp = parse_home_info_response(data)
         if self.debug:
@@ -739,6 +753,29 @@ class DQSGClient:
     def advertisement_receive_reward_ad_chance_orb(self, orb_master_id: int = 100007):
         req = build_advertisement_receive_reward_ad_chance_orb_request(orb_master_id)
         data = self.call_authenticated("advertisement/receive_reward_ad_chance_orb", req)
+        resp = parse_user_model_response(data)
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
+        return resp
+
+    def expedition_receive_reward(self, expedition_id: int = 1):
+        req = build_expedition_receive_reward_request(expedition_id)
+        data = self.call_authenticated("expedition/receive_reward", req)
+        resp = parse_user_model_response(data)
+        self.debug_log(f"  <- {_status_text(resp['_status'])}")
+        return resp
+
+    def expedition_do_expedition(
+        self,
+        expedition_id: int = 1,
+        expedition_master_id: int = 105,
+        user_style_id: int = 0,
+    ):
+        req = build_expedition_do_expedition_request(
+            expedition_id,
+            expedition_master_id,
+            user_style_id,
+        )
+        data = self.call_authenticated("expedition/do_expedition", req)
         resp = parse_user_model_response(data)
         self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
