@@ -3808,10 +3808,10 @@ _JQHD_XL_CONFIGS = {
         "fetch_multi_data_body": bytes.fromhex("6dbfcd0100020000007b7d"),
     },
     2: {
-        "stage": 30261201,
+        "stage": 30261102,
         "template_stage": 30161101,
         "template_file": "stage_30161101_xl.bin",
-        "fetch_multi_data_body": bytes.fromhex("d1bfcd0100020000007b7d"),
+        "fetch_multi_data_body": bytes.fromhex("6ebfcd0100020000007b7d"),
     },
 }
 
