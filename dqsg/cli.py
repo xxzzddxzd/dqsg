@@ -3235,6 +3235,8 @@ def _jqhd_template_stage_id(chapter: int, stage: int = None) -> int:
     if stage == 1:
         return 30242101
     if stage == 2:
+        if 7 <= chapter <= 13:
+            return 30242211
         return 30242203
     template_stage_id = _JQHD_TEMPLATE_STAGE_IDS.get(chapter)
     if template_stage_id is None:
