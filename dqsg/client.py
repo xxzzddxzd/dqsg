@@ -67,7 +67,10 @@ _DEFAULT_HEADERS = {
     "accept-encoding": "gzip, deflate, br",
     "accept-language": "zh-CN,zh-Hans;q=0.9",
     "content-type": "application/json",
-    "user-agent": "DQSG/2474139 CFNetwork/1399 Darwin/22.1.0",
+    "user-agent": os.environ.get(
+        "DQSG_USER_AGENT",
+        "DQSG/2649429 CFNetwork/1399 Darwin/22.1.0",
+    ),
 }
 
 
