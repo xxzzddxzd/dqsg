@@ -72,6 +72,8 @@ _DEFAULT_HEADERS = {
         "DQSG/2649429 CFNetwork/1399 Darwin/22.1.0",
     ),
 }
+_DEFAULT_MASTERDATA_VERSION = os.environ.get("DQSG_MASTERDATA_VERSION", "4b01543c6fc8213c")
+_DEFAULT_MASTERDATA_REVISION = int(os.environ.get("DQSG_MASTERDATA_REVISION", "414"))
 
 
 def _color(text: str, color: str) -> str:
@@ -276,7 +278,25 @@ class DQSGClient:
     # ------------------------------------------------------------------
 
     def masterdata_get_version(self):
-        data = self._call("masterdata/get_version", b"")
+        try:
+            data = self._call("masterdata/get_version", b"")
+        except requests.HTTPError as exc:
+            if exc.response is None or exc.response.status_code != 403:
+                raise
+            if not _DEFAULT_MASTERDATA_VERSION:
+                raise
+            self.mv = _DEFAULT_MASTERDATA_VERSION
+            print(
+                "  [masterdata] HTTP 403; "
+                f"using fallback mv={_DEFAULT_MASTERDATA_VERSION}"
+            )
+            return {
+                "_status": 1,
+                "timestamp": 0,
+                "revision": _DEFAULT_MASTERDATA_REVISION,
+                "version": _DEFAULT_MASTERDATA_VERSION,
+                "_fallback": True,
+            }
         resp = parse_masterdata_response(data)
         self.mv = resp["version"]
         self.debug_log(f"  <- version={resp['version']}, revision={resp['revision']}")
