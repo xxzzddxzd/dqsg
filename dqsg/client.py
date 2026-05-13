@@ -204,6 +204,25 @@ class DQSGClient:
         if self.debug:
             print(message)
 
+    def _key_debug_label(self, key: bytes) -> str:
+        if key == STARTUP_KEY:
+            return "startupKey"
+        if self.login_key is not None and key == self.login_key:
+            return "loginKey"
+        if key == self.session_key:
+            return "sessionKey"
+        return "key"
+
+    def _debug_request_details(self, path: str, url: str, key: bytes, plaintext: bytes, encrypted: bytes):
+        if not self.debug:
+            return
+        print(f"  -> path: {path}")
+        print(f"  -> request URL: {url}")
+        print(f"  -> user-agent: {_DEFAULT_HEADERS['user-agent']}")
+        print(f"  -> {self._key_debug_label(key)} ({len(key)} bytes) = {key.hex()}")
+        print(f"  -> plaintext ({len(plaintext)} bytes) = {plaintext.hex() if plaintext else '-'}")
+        print(f"  -> encrypted ({len(encrypted)} bytes) = {encrypted.hex()}")
+
     # ------------------------------------------------------------------
     # Transport
     # ------------------------------------------------------------------
@@ -227,6 +246,7 @@ class DQSGClient:
         path = self._build_path(endpoint, with_user=with_user, with_time=with_time)
         url = BASE_URL + path
         encrypted = encrypt_request(key, path, plaintext)
+        self._debug_request_details(path, url, key, plaintext, encrypted)
         line = f"=== /{endpoint} {_request_param_text(plaintext)}"
 
         # Save decrypted request body
