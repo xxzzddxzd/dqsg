@@ -92,6 +92,7 @@ _AUTO_PROXY_SOURCES = tuple(
     if source.strip()
 )
 _ALLOWED_PROXY_SCHEMES = {"http", "https", "socks4", "socks5", "socks5h"}
+_FALSE_VALUES = {"", "0", "false", "no", "off"}
 
 
 def _color(text: str, color: str) -> str:
@@ -241,6 +242,35 @@ def _extract_proxy_url(response_text: str) -> str:
     if not proxies:
         raise ValueError("proxy API did not return any valid proxy URL")
     return proxies[0]
+
+
+def _proxy_cache_path() -> str | None:
+    if os.environ.get("DQSG_PROXY_CACHE", "1").lower() in _FALSE_VALUES:
+        return None
+    path = os.environ.get("DQSG_PROXY_CACHE_FILE")
+    if path is None:
+        path = os.path.join("~", ".dqsg", "proxy_cache.json")
+    return os.path.expanduser(path)
+
+
+def _read_proxy_cache() -> dict:
+    path = _proxy_cache_path()
+    if not path or not os.path.exists(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return data if isinstance(data, dict) else {}
+
+
+def _write_proxy_cache(data: dict):
+    path = _proxy_cache_path()
+    if not path:
+        return
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=True, indent=2, sort_keys=True)
 
 
 # ==========================================================================
@@ -418,6 +448,33 @@ class DQSGClient:
         except requests.RequestException:
             return False
 
+    def _load_cached_proxy(self, country: str) -> str | None:
+        country = country.upper()
+        try:
+            entry = _read_proxy_cache().get(country)
+        except Exception as exc:
+            self.debug_log(f"  [proxy] cache read failed: {type(exc).__name__}: {exc}")
+            return None
+        if isinstance(entry, str):
+            proxy_url = entry
+        elif isinstance(entry, dict):
+            proxy_url = entry.get("proxy_url")
+        else:
+            return None
+        return _maybe_normalize_proxy_url(proxy_url) if proxy_url else None
+
+    def _save_cached_proxy(self, country: str, proxy_url: str):
+        country = country.upper()
+        try:
+            data = _read_proxy_cache()
+            data[country] = {
+                "proxy_url": _normalize_proxy_url(proxy_url),
+                "updated_at": int(time.time()),
+            }
+            _write_proxy_cache(data)
+        except Exception as exc:
+            self.debug_log(f"  [proxy] cache write failed: {type(exc).__name__}: {exc}")
+
     def _configure_auto_proxy(self, reason: str = None) -> bool:
         if self.proxy_url or not self.proxy_auto_enabled:
             return False
@@ -426,6 +483,16 @@ class DQSGClient:
             print(f"  [proxy] {reason}; fetching {country} proxy automatically")
         else:
             print(f"  [proxy] fetching {country} proxy automatically")
+        cached_proxy = self._load_cached_proxy(country)
+        if cached_proxy:
+            for probe_url in _proxy_url_variants(cached_proxy):
+                if self._proxy_probe(probe_url):
+                    self._set_proxy(probe_url, country=country)
+                    if probe_url != cached_proxy:
+                        self._save_cached_proxy(country, probe_url)
+                    return True
+                self.debug_log(f"  [proxy] cached proxy failed: {_redact_proxy_url(probe_url)}")
+            print(f"  [proxy] cached {country} proxy failed; refreshing")
         timeout = float(os.environ.get("DQSG_PROXY_API_TIMEOUT", "10"))
         max_candidates = int(os.environ.get("DQSG_PROXY_MAX_CANDIDATES", "20"))
         checked = 0
@@ -446,6 +513,7 @@ class DQSGClient:
                 for probe_url in _proxy_url_variants(proxy_url):
                     if self._proxy_probe(probe_url):
                         self._set_proxy(probe_url, country=country)
+                        self._save_cached_proxy(country, probe_url)
                         return True
                     self.debug_log(f"  [proxy] probe failed: {_redact_proxy_url(probe_url)}")
         print(f"  [proxy] no usable {country} proxy found")
