@@ -83,12 +83,15 @@ _AUTO_PROXY_SOURCES = tuple(
     source.strip()
     for source in os.environ.get(
         "DQSG_PROXY_AUTO_URLS",
-        "https://proxylist.geonode.com/api/proxy-list?limit=50&page=1&sort_by=lastChecked&sort_type=desc&country={country}&protocols=http%2Chttps,"
+        "https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/countries/{country}/data.txt,"
+        "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/countries/{country}/data.txt,"
+        "https://proxylist.geonode.com/api/proxy-list?limit=50&page=1&sort_by=lastChecked&sort_type=desc&countries={country}&protocols=http%2Chttps%2Csocks4%2Csocks5,"
         "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country={country}&ssl=all&anonymity=all,"
         "https://www.proxy-list.download/api/v1/get?type=http&country={country}",
     ).split(",")
     if source.strip()
 )
+_ALLOWED_PROXY_SCHEMES = {"http", "https", "socks4", "socks5", "socks5h"}
 
 
 def _color(text: str, color: str) -> str:
@@ -119,11 +122,38 @@ def _normalize_proxy_url(proxy_url: str) -> str:
         raise ValueError("proxy URL is empty")
     if "://" not in proxy_url:
         proxy_url = "http://" + proxy_url
+    parts = _parse_proxy_url(proxy_url)
+    if parts is None:
+        raise ValueError(f"invalid proxy URL: {proxy_url}")
     return proxy_url
 
 
+def _parse_proxy_url(proxy_url: str):
+    try:
+        parts = urlsplit(proxy_url)
+        port = parts.port
+    except ValueError:
+        return None
+    if parts.scheme not in _ALLOWED_PROXY_SCHEMES:
+        return None
+    if not parts.hostname or port is None:
+        return None
+    if not (1 <= port <= 65535):
+        return None
+    return parts
+
+
+def _maybe_normalize_proxy_url(proxy_url: str) -> str | None:
+    try:
+        return _normalize_proxy_url(proxy_url)
+    except ValueError:
+        return None
+
+
 def _redact_proxy_url(proxy_url: str) -> str:
-    parts = urlsplit(proxy_url)
+    parts = _parse_proxy_url(proxy_url)
+    if parts is None:
+        return "<invalid proxy>"
     if "@" not in parts.netloc:
         return proxy_url
     userinfo, hostinfo = parts.netloc.rsplit("@", 1)
@@ -132,10 +162,13 @@ def _redact_proxy_url(proxy_url: str) -> str:
 
 
 def _proxy_urls_from_text(text: str) -> list[str]:
-    return [
-        _normalize_proxy_url(match.group(0))
-        for match in re.finditer(r"(?:https?|socks5h?|socks4)://\S+|\b[\w.-]+:\d+\b", text)
-    ]
+    proxies = []
+    for match in re.finditer(r"(?:https?|socks5h?|socks4)://[^\s\"'<>]+|\b[\w.-]+:\d+\b", text):
+        candidate = match.group(0).rstrip(".,;)]}")
+        proxy_url = _maybe_normalize_proxy_url(candidate)
+        if proxy_url:
+            proxies.append(proxy_url)
+    return proxies
 
 
 def _dedupe_proxy_urls(proxy_urls: list[str]) -> list[str]:
@@ -147,6 +180,15 @@ def _dedupe_proxy_urls(proxy_urls: list[str]) -> list[str]:
         seen.add(proxy_url)
         result.append(proxy_url)
     return result
+
+
+def _proxy_url_variants(proxy_url: str) -> list[str]:
+    proxy_url = _normalize_proxy_url(proxy_url)
+    parts = _parse_proxy_url(proxy_url)
+    variants = [proxy_url]
+    if parts is not None and parts.scheme == "http" and parts.port == 443:
+        variants.append(urlunsplit(("https", parts.netloc, parts.path, parts.query, parts.fragment)))
+    return _dedupe_proxy_urls(variants)
 
 
 def _find_proxy_urls_in_json(value):
@@ -177,7 +219,11 @@ def _extract_proxy_urls(response_text: str) -> list[str]:
     if text[0] in "[{":
         found = _find_proxy_urls_in_json(json.loads(text))
         if found:
-            return _dedupe_proxy_urls([_normalize_proxy_url(proxy) for proxy in found])
+            return _dedupe_proxy_urls([
+                proxy_url
+                for proxy in found
+                if (proxy_url := _maybe_normalize_proxy_url(proxy))
+            ])
     proxies = []
     for line in text.splitlines():
         line = line.strip()
@@ -186,11 +232,15 @@ def _extract_proxy_urls(response_text: str) -> list[str]:
         proxies.extend(_proxy_urls_from_text(line))
     if proxies:
         return _dedupe_proxy_urls(proxies)
-    return [_normalize_proxy_url(text)]
+    proxy_url = _maybe_normalize_proxy_url(text)
+    return [proxy_url] if proxy_url else []
 
 
 def _extract_proxy_url(response_text: str) -> str:
-    return _extract_proxy_urls(response_text)[0]
+    proxies = _extract_proxy_urls(response_text)
+    if not proxies:
+        raise ValueError("proxy API did not return any valid proxy URL")
+    return proxies[0]
 
 
 # ==========================================================================
@@ -344,13 +394,26 @@ class DQSGClient:
         return proxy_url
 
     def _proxy_probe(self, proxy_url: str) -> bool:
-        probe_url = os.environ.get("DQSG_PROXY_TEST_URL", "https://api.ipify.org?format=json")
-        if probe_url.lower() in {"", "0", "none", "off"}:
+        mode = os.environ.get("DQSG_PROXY_TEST_MODE", "dqsg").lower()
+        if mode in {"", "0", "none", "off"}:
             return True
         proxies = {"http": proxy_url, "https": proxy_url}
         timeout = float(os.environ.get("DQSG_PROXY_TEST_TIMEOUT", "8"))
         try:
-            resp = requests.get(probe_url, proxies=proxies, timeout=timeout)
+            if mode == "ipify":
+                probe_url = os.environ.get("DQSG_PROXY_TEST_URL", "https://api.ipify.org?format=json")
+                resp = requests.get(probe_url, proxies=proxies, timeout=timeout)
+                return resp.status_code == 200
+            path = "/masterdata/get_version?p=i&id=1&l=zh"
+            encrypted = encrypt_request(STARTUP_KEY, path, b"")
+            resp = requests.post(
+                BASE_URL + path,
+                data=encrypted,
+                headers=_DEFAULT_HEADERS,
+                proxies=proxies,
+                timeout=timeout,
+                verify=False,
+            )
             return resp.status_code == 200
         except requests.RequestException:
             return False
@@ -380,10 +443,11 @@ class DQSGClient:
                 if checked > max_candidates:
                     print(f"  [proxy] no usable {country} proxy found after {checked - 1} candidate(s)")
                     return False
-                if self._proxy_probe(proxy_url):
-                    self._set_proxy(proxy_url, country=country)
-                    return True
-                self.debug_log(f"  [proxy] probe failed: {_redact_proxy_url(proxy_url)}")
+                for probe_url in _proxy_url_variants(proxy_url):
+                    if self._proxy_probe(probe_url):
+                        self._set_proxy(probe_url, country=country)
+                        return True
+                    self.debug_log(f"  [proxy] probe failed: {_redact_proxy_url(probe_url)}")
         print(f"  [proxy] no usable {country} proxy found")
         return False
 
