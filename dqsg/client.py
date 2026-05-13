@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
+import re
+from urllib.parse import urlsplit, urlunsplit
 import uuid
 import time
 import requests
@@ -72,8 +75,20 @@ _DEFAULT_HEADERS = {
         "DQSG/2649429 CFNetwork/1399 Darwin/22.1.0",
     ),
 }
-_DEFAULT_MASTERDATA_VERSION = os.environ.get("DQSG_MASTERDATA_VERSION", "4b01543c6fc8213c")
+_DEFAULT_MASTERDATA_VERSION = os.environ.get("DQSG_MASTERDATA_VERSION", "3f4f6411725abe85")
 _DEFAULT_MASTERDATA_REVISION = int(os.environ.get("DQSG_MASTERDATA_REVISION", "414"))
+_DEFAULT_PROXY_COUNTRY = os.environ.get("DQSG_PROXY_COUNTRY", "TW")
+_AUTO_PROXY_ENABLED = os.environ.get("DQSG_PROXY_AUTO", "1").lower() not in {"0", "false", "no", "off"}
+_AUTO_PROXY_SOURCES = tuple(
+    source.strip()
+    for source in os.environ.get(
+        "DQSG_PROXY_AUTO_URLS",
+        "https://proxylist.geonode.com/api/proxy-list?limit=50&page=1&sort_by=lastChecked&sort_type=desc&country={country}&protocols=http%2Chttps,"
+        "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country={country}&ssl=all&anonymity=all,"
+        "https://www.proxy-list.download/api/v1/get?type=http&country={country}",
+    ).split(",")
+    if source.strip()
+)
 
 
 def _color(text: str, color: str) -> str:
@@ -96,6 +111,86 @@ def _request_param_text(plaintext: bytes) -> str:
     if len(plaintext) <= 16:
         return plaintext.hex()
     return f"<{len(plaintext)} bytes>"
+
+
+def _normalize_proxy_url(proxy_url: str) -> str:
+    proxy_url = proxy_url.strip()
+    if not proxy_url:
+        raise ValueError("proxy URL is empty")
+    if "://" not in proxy_url:
+        proxy_url = "http://" + proxy_url
+    return proxy_url
+
+
+def _redact_proxy_url(proxy_url: str) -> str:
+    parts = urlsplit(proxy_url)
+    if "@" not in parts.netloc:
+        return proxy_url
+    userinfo, hostinfo = parts.netloc.rsplit("@", 1)
+    username = userinfo.split(":", 1)[0]
+    return urlunsplit((parts.scheme, f"{username}:***@{hostinfo}", parts.path, parts.query, parts.fragment))
+
+
+def _proxy_urls_from_text(text: str) -> list[str]:
+    return [
+        _normalize_proxy_url(match.group(0))
+        for match in re.finditer(r"(?:https?|socks5h?|socks4)://\S+|\b[\w.-]+:\d+\b", text)
+    ]
+
+
+def _dedupe_proxy_urls(proxy_urls: list[str]) -> list[str]:
+    result = []
+    seen = set()
+    for proxy_url in proxy_urls:
+        if proxy_url in seen:
+            continue
+        seen.add(proxy_url)
+        result.append(proxy_url)
+    return result
+
+
+def _find_proxy_urls_in_json(value):
+    found = []
+    if isinstance(value, str):
+        return _proxy_urls_from_text(value.strip())
+    if isinstance(value, list):
+        for item in value:
+            found.extend(_find_proxy_urls_in_json(item))
+        return found
+    if isinstance(value, dict):
+        ip = value.get("ip") or value.get("host")
+        port = value.get("port")
+        if ip and port:
+            found.append(f"http://{ip}:{port}")
+        for key in ("proxy", "url", "http", "https", "server", "data"):
+            if key in value:
+                found.extend(_find_proxy_urls_in_json(value[key]))
+        for item in value.values():
+            found.extend(_find_proxy_urls_in_json(item))
+    return found
+
+
+def _extract_proxy_urls(response_text: str) -> list[str]:
+    text = response_text.strip()
+    if not text:
+        raise ValueError("proxy API returned an empty response")
+    if text[0] in "[{":
+        found = _find_proxy_urls_in_json(json.loads(text))
+        if found:
+            return _dedupe_proxy_urls([_normalize_proxy_url(proxy) for proxy in found])
+    proxies = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        proxies.extend(_proxy_urls_from_text(line))
+    if proxies:
+        return _dedupe_proxy_urls(proxies)
+    return [_normalize_proxy_url(text)]
+
+
+def _extract_proxy_url(response_text: str) -> str:
+    return _extract_proxy_urls(response_text)[0]
 
 
 # ==========================================================================
@@ -144,6 +239,9 @@ class DQSGClient:
         self.terminal_id = None
         self.startup_random = None
         self.authorization_key = None
+        self.proxy_url = None
+        self.proxy_country = _DEFAULT_PROXY_COUNTRY
+        self.proxy_auto_enabled = _AUTO_PROXY_ENABLED
 
     @classmethod
     def new_account(cls):
@@ -163,6 +261,9 @@ class DQSGClient:
         obj.terminal_id = None
         obj.startup_random = None
         obj.authorization_key = None
+        obj.proxy_url = None
+        obj.proxy_country = _DEFAULT_PROXY_COUNTRY
+        obj.proxy_auto_enabled = _AUTO_PROXY_ENABLED
         return obj
 
     @classmethod
@@ -204,6 +305,88 @@ class DQSGClient:
         if self.debug:
             print(message)
 
+    def configure_proxy(
+        self,
+        proxy_url: str = None,
+        proxy_api_url: str = None,
+        country: str = None,
+        proxy_auto: bool = None,
+    ):
+        proxy_url = proxy_url or os.environ.get("DQSG_PROXY_URL")
+        proxy_api_url = proxy_api_url or os.environ.get("DQSG_PROXY_API_URL")
+        country = country or _DEFAULT_PROXY_COUNTRY
+        self.proxy_country = country
+        if proxy_auto is not None:
+            self.proxy_auto_enabled = proxy_auto
+
+        if not proxy_url and proxy_api_url:
+            url = proxy_api_url.format(country=country, country_lower=country.lower())
+            resp = requests.get(url, timeout=float(os.environ.get("DQSG_PROXY_API_TIMEOUT", "10")))
+            resp.raise_for_status()
+            proxy_url = _extract_proxy_url(resp.text)
+
+        if not proxy_url:
+            if proxy_auto is True:
+                self._configure_auto_proxy(reason="requested")
+            return None
+
+        return self._set_proxy(proxy_url, country=country)
+
+    def _set_proxy(self, proxy_url: str, country: str = None):
+        proxy_url = _normalize_proxy_url(proxy_url)
+        self.proxy_url = proxy_url
+        self.session.proxies.update({
+            "http": proxy_url,
+            "https": proxy_url,
+        })
+        country = country or self.proxy_country
+        print(f"  [proxy] using {country} proxy: {_redact_proxy_url(proxy_url)}")
+        return proxy_url
+
+    def _proxy_probe(self, proxy_url: str) -> bool:
+        probe_url = os.environ.get("DQSG_PROXY_TEST_URL", "https://api.ipify.org?format=json")
+        if probe_url.lower() in {"", "0", "none", "off"}:
+            return True
+        proxies = {"http": proxy_url, "https": proxy_url}
+        timeout = float(os.environ.get("DQSG_PROXY_TEST_TIMEOUT", "8"))
+        try:
+            resp = requests.get(probe_url, proxies=proxies, timeout=timeout)
+            return resp.status_code == 200
+        except requests.RequestException:
+            return False
+
+    def _configure_auto_proxy(self, reason: str = None) -> bool:
+        if self.proxy_url or not self.proxy_auto_enabled:
+            return False
+        country = self.proxy_country or _DEFAULT_PROXY_COUNTRY
+        if reason:
+            print(f"  [proxy] {reason}; fetching {country} proxy automatically")
+        else:
+            print(f"  [proxy] fetching {country} proxy automatically")
+        timeout = float(os.environ.get("DQSG_PROXY_API_TIMEOUT", "10"))
+        max_candidates = int(os.environ.get("DQSG_PROXY_MAX_CANDIDATES", "20"))
+        checked = 0
+        for source in _AUTO_PROXY_SOURCES:
+            url = source.format(country=country, country_lower=country.lower())
+            try:
+                resp = requests.get(url, timeout=timeout)
+                resp.raise_for_status()
+                candidates = _extract_proxy_urls(resp.text)
+            except Exception as exc:
+                self.debug_log(f"  [proxy] source failed: {url} ({type(exc).__name__}: {exc})")
+                continue
+            for proxy_url in candidates:
+                checked += 1
+                if checked > max_candidates:
+                    print(f"  [proxy] no usable {country} proxy found after {checked - 1} candidate(s)")
+                    return False
+                if self._proxy_probe(proxy_url):
+                    self._set_proxy(proxy_url, country=country)
+                    return True
+                self.debug_log(f"  [proxy] probe failed: {_redact_proxy_url(proxy_url)}")
+        print(f"  [proxy] no usable {country} proxy found")
+        return False
+
     def _key_debug_label(self, key: bytes) -> str:
         if key == STARTUP_KEY:
             return "startupKey"
@@ -219,6 +402,8 @@ class DQSGClient:
         print(f"  -> path: {path}")
         print(f"  -> request URL: {url}")
         print(f"  -> user-agent: {_DEFAULT_HEADERS['user-agent']}")
+        if self.proxy_url:
+            print(f"  -> proxy: {_redact_proxy_url(self.proxy_url)}")
         print(f"  -> {self._key_debug_label(key)} ({len(key)} bytes) = {key.hex()}")
         print(f"  -> plaintext ({len(plaintext)} bytes) = {plaintext.hex() if plaintext else '-'}")
         print(f"  -> encrypted ({len(encrypted)} bytes) = {encrypted.hex()}")
@@ -303,6 +488,17 @@ class DQSGClient:
         except requests.HTTPError as exc:
             if exc.response is None or exc.response.status_code != 403:
                 raise
+            if self._configure_auto_proxy(reason="masterdata hit HTTP 403"):
+                try:
+                    data = self._call("masterdata/get_version", b"")
+                    resp = parse_masterdata_response(data)
+                    self.mv = resp["version"]
+                    self.debug_log(f"  <- version={resp['version']}, revision={resp['revision']}")
+                    return resp
+                except requests.HTTPError as retry_exc:
+                    if retry_exc.response is None or retry_exc.response.status_code != 403:
+                        raise
+                    print("  [proxy] masterdata still returned HTTP 403 after proxy retry")
             if not _DEFAULT_MASTERDATA_VERSION:
                 raise
             self.mv = _DEFAULT_MASTERDATA_VERSION

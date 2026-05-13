@@ -192,6 +192,12 @@ def _debug_enabled(args) -> bool:
 
 def _configure_client_debug(client: DQSGClient, args):
     client.debug = _debug_enabled(args)
+    client.configure_proxy(
+        proxy_url=getattr(args, "proxy", None),
+        proxy_api_url=getattr(args, "proxy_api", None),
+        country=getattr(args, "proxy_country", None),
+        proxy_auto=getattr(args, "proxy_auto", None),
+    )
     return client
 
 
@@ -4255,6 +4261,33 @@ def build_parser():
         "--debug",
         action="store_true",
         help="Show detailed request/session/retry logs",
+    )
+    parser.add_argument(
+        "--proxy",
+        help="Proxy URL for API calls, e.g. http://user:pass@host:port or host:port",
+    )
+    parser.add_argument(
+        "--proxy-api",
+        dest="proxy_api",
+        help="HTTP endpoint returning a proxy URL; supports {country} and {country_lower}",
+    )
+    parser.add_argument(
+        "--proxy-country",
+        default=None,
+        help="Country code for --proxy-api, default: DQSG_PROXY_COUNTRY or TW",
+    )
+    parser.add_argument(
+        "--proxy-auto",
+        dest="proxy_auto",
+        action="store_true",
+        default=None,
+        help="Automatically fetch a proxy after masterdata/get_version returns HTTP 403",
+    )
+    parser.add_argument(
+        "--no-proxy-auto",
+        dest="proxy_auto",
+        action="store_false",
+        help="Disable automatic proxy fetching on HTTP 403",
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
