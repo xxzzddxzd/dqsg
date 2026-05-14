@@ -1287,70 +1287,144 @@ def _receive_stage_result_ad_chance(client: DQSGClient, stage_result: dict, inde
         _check(resp, "advertisement/receive_reward_chance_point_card_point")
 
 
-def _run_scored_dungeon(client, stage_master_id, build_result_body, login_resp=None):
-    """Run a scored dungeon: in_game/start + in_game/result as a single SOP.
+class _BattleRunner:
+    """Shared in_game/start + in_game/result execution path for battle commands."""
 
-    Handles HTTP 500 on both start and result:
-      - If login returned InGameSessionId (unfinished battle), surrenders it.
-      - If start gets 500, re-logins, surrenders the unfinished session, then restarts.
-      - If result gets 500, re-logins and surrenders instead of resuming.
+    def __init__(self, client: DQSGClient, *, result_stat_kwargs: dict | None = None):
+        self.client = client
+        self.result_stat_kwargs = result_stat_kwargs or {}
 
-    Args:
-        client: DQSGClient instance (already logged in).
-        stage_master_id: Stage to fight.
-        build_result_body: callable(in_game_session_id, start_response) -> bytes.
-        login_resp: The login/login response dict (to check for existing InGameSessionId).
-    """
-    if login_resp:
-        _surrender_login_resume_for_battle(
-            client,
-            login_resp,
-            context=f"in_game/start({stage_master_id})",
+    def surrender_login_session(self, login_resp: dict | None, *, context: str = "battle"):
+        return _surrender_login_resume_for_battle(self.client, login_resp, context=context)
+
+    def run_repeats(
+        self,
+        *,
+        stage_master_id: int,
+        times: int,
+        run_label: str = None,
+        template_stage_id: int = None,
+        build_result_body=None,
+        start_fn=None,
+        before_start=None,
+        after_start=None,
+        before_result=None,
+        after_start_once: bool = False,
+        print_single_run: bool = False,
+        start_check_label: str = None,
+        result_check_label: str = None,
+    ):
+        last_resp = None
+        for run_no in range(1, times + 1):
+            if run_label and (print_single_run or times > 1):
+                print(f"\n=== {run_label} run {run_no}/{times} ===")
+            last_resp = self.run_once(
+                stage_master_id=stage_master_id,
+                template_stage_id=template_stage_id,
+                build_result_body=build_result_body,
+                start_fn=start_fn,
+                before_start=(
+                    (lambda rn=run_no, ts=times: before_start(rn, ts))
+                    if before_start else None
+                ),
+                after_start=(
+                    (lambda rn=run_no, ts=times: after_start(rn, ts))
+                    if after_start and (not after_start_once or run_no == 1)
+                    else None
+                ),
+                before_result=(
+                    (lambda rn=run_no, ts=times: before_result(rn, ts))
+                    if before_result else None
+                ),
+                start_check_label=start_check_label,
+                result_check_label=result_check_label,
+            )
+        return last_resp
+
+    def run_once(
+        self,
+        *,
+        stage_master_id: int,
+        template_stage_id: int = None,
+        build_result_body=None,
+        start_fn=None,
+        before_start=None,
+        after_start=None,
+        before_result=None,
+        in_game_session_id: int = None,
+        start_check_label: str = None,
+        result_check_label: str = None,
+    ):
+        start_response = None
+        existing_session_id = in_game_session_id
+
+        if existing_session_id is None:
+            start_response, existing_session_id = self._start_with_retry(
+                stage_master_id,
+                start_fn=start_fn,
+                before_start=before_start,
+                start_check_label=start_check_label,
+            )
+            if after_start:
+                after_start()
+        else:
+            print(f"\n=== resume in_game/session ({existing_session_id}) ===")
+
+        if before_result:
+            before_result()
+        print(f"\n=== in_game/result ({stage_master_id}) ===")
+        resp = _submit_in_game_result_with_resume(
+            self.client,
+            build_result_body=build_result_body,
+            stage_master_id=stage_master_id,
+            template_stage_id=template_stage_id,
+            in_game_session_id=existing_session_id,
+            start_response=start_response,
+            **self.result_stat_kwargs,
         )
-    start_response = None
-    existing_session_id = None
+        _check(resp, result_check_label or f"in_game/result({stage_master_id})")
+        return resp
 
-    for start_attempt in range(1, 3):
-        if client.debug:
+    def _start_with_retry(
+        self,
+        stage_master_id: int,
+        *,
+        start_fn=None,
+        before_start=None,
+        start_check_label: str = None,
+    ):
+        for start_attempt in range(1, 3):
+            if before_start:
+                before_start()
             print(f"\n=== in_game/start ({stage_master_id}) ===")
-        try:
-            resp = client.in_game_start(stage_master_id, deck_index=1)
-            _check(resp, "in_game/start")
-            start_response = resp
-            existing_session_id = resp.get("SessionId")
-            break
-        except requests.HTTPError as exc:
-            if exc.response is None or exc.response.status_code != 500:
-                raise
-            if start_attempt >= 2:
-                raise
-            if client.debug:
+            try:
+                if start_fn is not None:
+                    resp = start_fn()
+                else:
+                    resp = self.client.in_game_start(stage_master_id, deck_index=1)
+                _check(resp, start_check_label or f"in_game/start({stage_master_id})")
+                return resp, resp.get("SessionId")
+            except requests.HTTPError as exc:
+                if exc.response is None or exc.response.status_code != 500:
+                    raise
+                if start_attempt >= 2:
+                    raise
                 print(
                     f"  [resume] in_game/start hit {_color('HTTP 500', _RED)}, "
                     "refreshing InGameSessionId before surrender"
                 )
-            login_resp = client.login_login(first_login=False)
-            _check(login_resp, "login/login resume")
-            surrendered_session_id = _surrender_login_resume_for_battle(
-                client,
-                login_resp,
-                context=f"in_game/start({stage_master_id}) retry",
-            )
-            if surrendered_session_id is None:
-                raise RuntimeError(
-                    "resume login did not return InGameSessionId"
-                ) from exc
+                login_resp = self.client.login_login(first_login=False)
+                _check(login_resp, "login/login resume")
+                surrendered_session_id = self.surrender_login_session(
+                    login_resp,
+                    context=f"in_game/start({stage_master_id}) retry",
+                )
+                if surrendered_session_id is None:
+                    raise RuntimeError(
+                        "resume login did not return InGameSessionId"
+                    ) from exc
 
-    if client.debug:
-        print(f"\n=== in_game/result ({stage_master_id}) ===")
-    resp = _submit_in_game_result_with_resume(
-        client,
-        build_result_body=build_result_body,
-        in_game_session_id=existing_session_id,
-        start_response=start_response,
-    )
-    _check(resp, "in_game/result")
-    return resp
+        raise RuntimeError(f"in_game/start({stage_master_id}) did not return a response")
 
 
 def cmd_accounts(args):
@@ -2314,21 +2388,24 @@ def _run_battle_stage(client: DQSGClient, stage_key: str, login_response_raw: by
     config = _BATTLE_STAGE_CONFIG[stage_key]
     stage_master_id = config["stage_master_id"]
     template_stage_id = config["template_stage_id"]
+    runner = _BattleRunner(client)
+
     print(f"\n=== stage {stage_key} ({stage_master_id}) ===")
     for step in config["before_start"]:
         _run_battle_stage_step(client, login_response_raw, step)
-    print(f"\n=== in_game/start ({stage_master_id}) ===")
-    resp = client.in_game_start(stage_master_id, deck_index=1)
-    _check(resp, f"in_game/start({stage_master_id})")
-    for step in config["after_start"]:
-        _run_battle_stage_step(client, login_response_raw, step)
-    print(f"\n=== in_game/result ({stage_master_id}) ===")
-    resp = _submit_in_game_result_with_resume(
-        client,
+
+    def after_start(_run_no, _times):
+        for step in config["after_start"]:
+            _run_battle_stage_step(client, login_response_raw, step)
+
+    runner.run_repeats(
         stage_master_id=stage_master_id,
+        times=1,
+        run_label=f"stage {stage_key}",
         template_stage_id=template_stage_id,
+        after_start=after_start,
+        print_single_run=False,
     )
-    _check(resp, f"in_game/result({stage_master_id})")
 
 
 def cmd_avatar_save(args):
@@ -3060,10 +3137,8 @@ def cmd_battle_stage(args):
     resp = client.login_login(first_login=False)
     _check(resp, "login/login")
     login_snapshot = _build_account_snapshot_from_login(client)
-    resume_session_id = resp.get("InGameSessionId")
-    if resume_session_id is not None:
-        _surrender_login_resume_for_battle(client, resp, context=f"battle-stage {stage_key}")
-        resume_session_id = None
+    runner = _BattleRunner(client, result_stat_kwargs=result_stat_kwargs)
+    runner.surrender_login_session(resp, context=f"battle-stage {stage_key}")
 
     total_steps = (
         len(config["before_start"])
@@ -3079,30 +3154,30 @@ def cmd_battle_stage(args):
         stepper(step_label)
         _run_battle_stage_step(client, client.last_login_response_raw, step_action)
 
-    for run_no in range(1, times + 1):
-        if times > 1:
-            print(f"\n=== battle-stage {stage_key} run {run_no}/{times} ===")
-
+    def before_start(_run_no, _times):
         stepper(f"in_game/start({stage_master_id})")
-        resp = client.in_game_start(stage_master_id, deck_index=1)
-        _check(resp, f"in_game/start({stage_master_id})")
 
-        if run_no == 1:
-            for step_action in config["after_start"]:
-                step_label = step_action[0].replace("_", "/")
-                if step_action[1] is not None:
-                    step_label = f"{step_label}({step_action[1]})"
-                stepper(step_label)
-                _run_battle_stage_step(client, client.last_login_response_raw, step_action)
+    def after_start(_run_no, _times):
+        for step_action in config["after_start"]:
+            step_label = step_action[0].replace("_", "/")
+            if step_action[1] is not None:
+                step_label = f"{step_label}({step_action[1]})"
+            stepper(step_label)
+            _run_battle_stage_step(client, client.last_login_response_raw, step_action)
 
+    def before_result(_run_no, _times):
         stepper(f"in_game/result({stage_master_id})")
-        resp = _submit_in_game_result_with_resume(
-            client,
-            stage_master_id=stage_master_id,
-            template_stage_id=template_stage_id,
-            **result_stat_kwargs,
-        )
-        _check(resp, f"in_game/result({stage_master_id})")
+
+    runner.run_repeats(
+        stage_master_id=stage_master_id,
+        times=times,
+        run_label=f"battle-stage {stage_key}",
+        template_stage_id=template_stage_id,
+        before_start=before_start,
+        after_start=after_start,
+        before_result=before_result,
+        after_start_once=True,
+    )
 
     saved = _save_client_account(
         client,
@@ -3277,35 +3352,20 @@ def _run_story_stage_command(args, *, hard: bool):
     resp = client.login_login(first_login=False)
     _check(resp, "login/login")
     login_snapshot = _build_account_snapshot_from_login(client)
-    resume_session_id = resp.get("InGameSessionId")
-    if resume_session_id is not None:
-        _surrender_login_resume_for_battle(client, resp, context=f"{display_mode} {range_label}")
-        resume_session_id = None
+    runner = _BattleRunner(client, result_stat_kwargs=result_stat_kwargs)
+    runner.surrender_login_session(resp, context=f"{display_mode} {range_label}")
 
     for stage in stage_numbers:
         stage_key = f"{chapter}-{stage}"
         stage_master_id = _story_stage_master_id(chapter, stage, hard=hard)
         template_stage_id = _resolve_story_template_stage_id(chapter, stage, hard=hard)
-        for run_no in range(1, times + 1):
-            print(f"\n=== {display_mode} {stage_key} ({stage_master_id}) run {run_no}/{times} ===")
-
-            if resume_session_id is not None:
-                print(f"\n=== resume in_game/session ({resume_session_id}) ===")
-            else:
-                print(f"\n=== in_game/start ({stage_master_id}) ===")
-                resp = client.in_game_start(stage_master_id, deck_index=1)
-                _check(resp, f"in_game/start({stage_master_id})")
-
-            print(f"\n=== in_game/result ({stage_master_id}) ===")
-            resp = _submit_in_game_result_with_resume(
-                client,
-                stage_master_id=stage_master_id,
-                template_stage_id=template_stage_id,
-                in_game_session_id=resume_session_id,
-                **result_stat_kwargs,
-            )
-            _check(resp, f"in_game/result({stage_master_id})")
-            resume_session_id = None
+        runner.run_repeats(
+            stage_master_id=stage_master_id,
+            times=times,
+            run_label=f"{display_mode} {stage_key} ({stage_master_id})",
+            template_stage_id=template_stage_id,
+            print_single_run=True,
+        )
 
     final_stage_key = f"{chapter}-{end_stage}"
 
@@ -3444,25 +3504,13 @@ def cmd_jqhd_qd(args, enemy_key: str, level_text: str):
     resp = client.login_login(first_login=False)
     _check(resp, "login/login")
     login_snapshot = _build_account_snapshot_from_login(client)
-    resume_session_id = resp.get("InGameSessionId")
-    if resume_session_id is not None:
-        _surrender_login_resume_for_battle(client, resp, context=f"jqhd qd {enemy_key} {level}")
-        resume_session_id = None
-
-    for run_no in range(1, times + 1):
-        print(f"\n--- run {run_no}/{times} ---")
-        if resume_session_id is not None:
-            print(f"\n=== resume in_game/session ({resume_session_id}) ===")
-        else:
-            print(f"\n=== in_game/start ({stage_master_id}) ===")
-            resp = client.in_game_start(stage_master_id, deck_index=1)
-            _check(resp, f"in_game/start({stage_master_id})")
-
-        print(f"\n=== in_game/result ({stage_master_id}) ===")
-        resp = _submit_in_game_result_with_resume(
-            client,
-            stage_master_id=stage_master_id,
-            build_result_body=lambda sid, start_response: load_scored_result(
+    runner = _BattleRunner(client, result_stat_kwargs=result_stat_kwargs)
+    runner.surrender_login_session(resp, context=f"jqhd qd {enemy_key} {level}")
+    runner.run_repeats(
+        stage_master_id=stage_master_id,
+        times=times,
+        run_label=f"{enemy['name']} Lv.{level} ({stage_master_id})",
+        build_result_body=lambda sid, start_response: load_scored_result(
                 stage_master_id=stage_master_id,
                 score=score,
                 template_stage_id=_JQHD_QD_TEMPLATE_STAGE_ID,
@@ -3470,11 +3518,8 @@ def cmd_jqhd_qd(args, enemy_key: str, level_text: str):
                 start_response=start_response,
                 **result_stat_kwargs,
             ),
-            in_game_session_id=resume_session_id,
-            **result_stat_kwargs,
-        )
-        _check(resp, f"in_game/result({stage_master_id})")
-        resume_session_id = None
+        print_single_run=True,
+    )
 
     saved = _save_client_account(
         client,
@@ -3524,35 +3569,21 @@ def cmd_jqhd_special(args, special_key: str, level_text: str):
     resp = client.login_login(first_login=False)
     _check(resp, "login/login")
     login_snapshot = _build_account_snapshot_from_login(client)
-    resume_session_id = resp.get("InGameSessionId")
-    if resume_session_id is not None:
-        _surrender_login_resume_for_battle(client, resp, context=f"jqhd {special_key} {level}")
-        resume_session_id = None
-
-    for run_no in range(1, times + 1):
-        print(f"\n--- run {run_no}/{times} ---")
-        if resume_session_id is not None:
-            print(f"\n=== resume in_game/session ({resume_session_id}) ===")
-        else:
-            print(f"\n=== in_game/start ({stage_master_id}) ===")
-            resp = client.in_game_start(stage_master_id, deck_index=1)
-            _check(resp, f"in_game/start({stage_master_id})")
-
-        print(f"\n=== in_game/result ({stage_master_id}) ===")
-        resp = _submit_in_game_result_with_resume(
-            client,
-            build_result_body=lambda sid, start_response: load_battle_result(
+    runner = _BattleRunner(client, result_stat_kwargs=result_stat_kwargs)
+    runner.surrender_login_session(resp, context=f"jqhd {special_key} {level}")
+    runner.run_repeats(
+        stage_master_id=stage_master_id,
+        times=times,
+        run_label=f"活动剧情 {stage_config['name']} Lv.{level} ({stage_master_id})",
+        build_result_body=lambda sid, start_response: load_battle_result(
                 stage_master_id=stage_master_id,
                 template_stage_id=template_stage_id,
                 in_game_session_id=sid,
                 start_response=start_response,
                 **result_stat_kwargs,
             ),
-            in_game_session_id=resume_session_id,
-            **result_stat_kwargs,
-        )
-        _check(resp, f"in_game/result({stage_master_id})")
-        resume_session_id = None
+        print_single_run=True,
+    )
 
     saved = _save_client_account(
         client,
@@ -3628,34 +3659,19 @@ def cmd_jqhd(args):
     resp = client.login_login(first_login=False)
     _check(resp, "login/login")
     login_snapshot = _build_account_snapshot_from_login(client)
-    resume_session_id = resp.get("InGameSessionId")
-    if resume_session_id is not None:
-        _surrender_login_resume_for_battle(client, resp, context=f"jqhd {range_label}")
-        resume_session_id = None
+    runner = _BattleRunner(client, result_stat_kwargs=result_stat_kwargs)
+    runner.surrender_login_session(resp, context=f"jqhd {range_label}")
 
     for stage in stage_numbers:
-        for run_no in range(1, times + 1):
-            stage_master_id = _jqhd_stage_master_id(chapter, stage)
-            template_stage_id = _jqhd_template_stage_id(chapter, stage)
-            print(f"\n=== 活动剧情 {chapter}-{stage} ({stage_master_id}) run {run_no}/{times} ===")
-
-            if resume_session_id is not None:
-                print(f"\n=== resume in_game/session ({resume_session_id}) ===")
-            else:
-                print(f"\n=== in_game/start ({stage_master_id}) ===")
-                resp = client.in_game_start(stage_master_id, deck_index=1)
-                _check(resp, f"in_game/start({stage_master_id})")
-
-            print(f"\n=== in_game/result ({stage_master_id}) ===")
-            resp = _submit_in_game_result_with_resume(
-                client,
-                stage_master_id=stage_master_id,
-                template_stage_id=template_stage_id,
-                in_game_session_id=resume_session_id,
-                **result_stat_kwargs,
-            )
-            _check(resp, f"in_game/result({stage_master_id})")
-            resume_session_id = None
+        stage_master_id = _jqhd_stage_master_id(chapter, stage)
+        template_stage_id = _jqhd_template_stage_id(chapter, stage)
+        runner.run_repeats(
+            stage_master_id=stage_master_id,
+            times=times,
+            run_label=f"活动剧情 {chapter}-{stage} ({stage_master_id})",
+            template_stage_id=template_stage_id,
+            print_single_run=True,
+        )
 
     saved = _save_client_account(
         client,
@@ -4172,15 +4188,13 @@ def cmd_yc(args):
     resp = client.login_login(first_login=False)
     _check(resp, "login/login")
     login_snapshot = _build_account_snapshot_from_login(client)
-    _surrender_login_resume_for_battle(client, resp, context=f"yc {dungeon_type} {level}")
-
-    for idx in range(1, times + 1):
-        if times > 1:
-            print(f"\n=== YC run {idx}/{times} ===")
-        _run_scored_dungeon(
-            client,
-            stage_id,
-            build_result_body=lambda sid, start_response: load_scored_result(
+    runner = _BattleRunner(client, result_stat_kwargs=result_stat_kwargs)
+    runner.surrender_login_session(resp, context=f"yc {dungeon_type} {level}")
+    runner.run_repeats(
+        stage_master_id=stage_id,
+        times=times,
+        run_label="YC",
+        build_result_body=lambda sid, start_response: load_scored_result(
                 stage_master_id=stage_id,
                 score=score,
                 template_stage_id=template_id,
@@ -4189,8 +4203,7 @@ def cmd_yc(args):
                 start_response=start_response,
                 **result_stat_kwargs,
             ),
-            login_resp=resp if idx == 1 else None,
-        )
+    )
 
     saved = _save_client_account(
         client, args,
@@ -4252,15 +4265,13 @@ def cmd_hd(args):
     resp = client.login_login(first_login=False)
     _check(resp, "login/login")
     login_snapshot = _build_account_snapshot_from_login(client)
-    _surrender_login_resume_for_battle(client, resp, context=f"hd {event_type} {level}")
-
-    for idx in range(1, times + 1):
-        if times > 1:
-            print(f"\n=== HD run {idx}/{times} ===")
-        _run_scored_dungeon(
-            client,
-            stage_id,
-            build_result_body=lambda sid, start_response: load_scored_result(
+    runner = _BattleRunner(client, result_stat_kwargs=result_stat_kwargs)
+    runner.surrender_login_session(resp, context=f"hd {event_type} {level}")
+    runner.run_repeats(
+        stage_master_id=stage_id,
+        times=times,
+        run_label="HD",
+        build_result_body=lambda sid, start_response: load_scored_result(
                 stage_master_id=stage_id,
                 score=score,
                 template_stage_id=template_id,
@@ -4270,8 +4281,7 @@ def cmd_hd(args):
                 start_response=start_response,
                 **result_stat_kwargs,
             ),
-            login_resp=resp if idx == 1 else None,
-        )
+    )
 
     saved = _save_client_account(
         client,
@@ -4333,23 +4343,20 @@ def cmd_tz(args):
     resp = client.login_login(first_login=False)
     _check(resp, "login/login")
     login_snapshot = _build_account_snapshot_from_login(client)
-    _surrender_login_resume_for_battle(client, resp, context=f"tz {zone} {element} {level}")
-
-    for idx in range(1, times + 1):
-        if times > 1:
-            print(f"\n=== TZ run {idx}/{times} ===")
-        _run_scored_dungeon(
-            client,
-            stage_id,
-            build_result_body=lambda sid, start_response: load_battle_result(
+    runner = _BattleRunner(client, result_stat_kwargs=result_stat_kwargs)
+    runner.surrender_login_session(resp, context=f"tz {zone} {element} {level}")
+    runner.run_repeats(
+        stage_master_id=stage_id,
+        times=times,
+        run_label="TZ",
+        build_result_body=lambda sid, start_response: load_battle_result(
                 stage_master_id=stage_id,
                 template_stage_id=template_id,
                 in_game_session_id=sid,
                 start_response=start_response,
                 **result_stat_kwargs,
             ),
-            login_resp=resp if idx == 1 else None,
-        )
+    )
 
     saved = _save_client_account(
         client,
@@ -4394,26 +4401,26 @@ def _run_xl_command(
     resp = client.login_login(first_login=False)
     _check(resp, "login/login")
     login_snapshot = _build_account_snapshot_from_login(client)
-    _surrender_login_resume_for_battle(client, resp, context=command_name)
+    runner = _BattleRunner(client, result_stat_kwargs=result_stat_kwargs)
+    runner.surrender_login_session(resp, context=command_name)
 
-    for idx in range(1, times + 1):
-        print(f"\n=== XL run {idx}/{times} ===")
-
+    def before_start(_run_no, _times):
         print(f"\n=== matching_room/fetch_multi_data ({stage_id}) ===")
         resp = client.matching_room_fetch_multi_data_raw(config["fetch_multi_data_body"])
         _check(resp, "matching_room/fetch_multi_data")
 
-        print(f"\n=== in_game/start ({stage_id}) ===")
+    def start_fn():
         if config.get("start_body") is not None:
-            resp = client.in_game_start_raw(config["start_body"])
-        else:
-            resp = client.in_game_start(stage_id, deck_index=1)
-        _check(resp, "in_game/start")
+            return client.in_game_start_raw(config["start_body"])
+        return client.in_game_start(stage_id, deck_index=1)
 
-        print(f"\n=== in_game/result ({stage_id}) ===")
-        resp = _submit_in_game_result_with_resume(
-            client,
-            build_result_body=lambda sid, start_response: load_battle_result(
+    runner.run_repeats(
+        stage_master_id=stage_id,
+        times=times,
+        run_label="XL",
+        before_start=before_start,
+        start_fn=start_fn,
+        build_result_body=lambda sid, start_response: load_battle_result(
                 stage_master_id=stage_id,
                 template_stage_id=config["template_stage"],
                 in_game_session_id=sid,
@@ -4421,8 +4428,10 @@ def _run_xl_command(
                 start_response=start_response,
                 **result_stat_kwargs,
             ),
-        )
-        _check(resp, "in_game/result")
+        print_single_run=True,
+        start_check_label="in_game/start",
+        result_check_label="in_game/result",
+    )
 
     saved = _save_client_account(
         client,
@@ -4486,19 +4495,18 @@ def cmd_juxiang(args):
     _check(resp, "login/login")
     login_snapshot = _build_account_snapshot_from_login(client)
 
-    for idx in range(1, times + 1):
-        if times > 1:
-            print(f"\n=== Juxiang run {idx}/{times} ===")
-        _run_scored_dungeon(
-            client,
-            _JUXIANG_STAGE_MASTER_ID,
-            build_result_body=lambda sid, start_response: load_juxiang_result(
+    runner = _BattleRunner(client, result_stat_kwargs=result_stat_kwargs)
+    runner.surrender_login_session(resp, context=f"in_game/start({_JUXIANG_STAGE_MASTER_ID})")
+    runner.run_repeats(
+        stage_master_id=_JUXIANG_STAGE_MASTER_ID,
+        times=times,
+        run_label="Juxiang",
+        build_result_body=lambda sid, start_response: load_juxiang_result(
                 score=score,
                 in_game_session_id=sid,
                 **result_stat_kwargs,
             ),
-            login_resp=resp if idx == 1 else None,
-        )
+    )
 
     saved = _save_client_account(
         client,
