@@ -78,6 +78,7 @@ _DEFAULT_HEADERS = {
 _DEFAULT_MASTERDATA_VERSION = os.environ.get("DQSG_MASTERDATA_VERSION", "3f4f6411725abe85")
 _DEFAULT_MASTERDATA_REVISION = int(os.environ.get("DQSG_MASTERDATA_REVISION", "414"))
 _DEFAULT_PROXY_COUNTRY = os.environ.get("DQSG_PROXY_COUNTRY", "TW")
+_DEFAULT_PROXY_CONFIG_FILE = os.environ.get("DQSG_PROXY_CONFIG_FILE", os.path.join("config", "proxy_pool.json"))
 _AUTO_PROXY_ENABLED = os.environ.get("DQSG_PROXY_AUTO", "1").lower() not in {"0", "false", "no", "off"}
 _AUTO_PROXY_SOURCES = tuple(
     source.strip()
@@ -166,6 +167,10 @@ def _proxy_urls_from_text(text: str) -> list[str]:
     proxies = []
     for match in re.finditer(r"(?:https?|socks5h?|socks4)://[^\s\"'<>]+|\b[\w.-]+:\d+\b", text):
         candidate = match.group(0).rstrip(".,;)]}")
+        if "://" not in candidate:
+            host = candidate.rsplit(":", 1)[0]
+            if "." not in host:
+                continue
         proxy_url = _maybe_normalize_proxy_url(candidate)
         if proxy_url:
             proxies.append(proxy_url)
@@ -205,11 +210,9 @@ def _find_proxy_urls_in_json(value):
         port = value.get("port")
         if ip and port:
             found.append(f"http://{ip}:{port}")
-        for key in ("proxy", "url", "http", "https", "server", "data"):
+        for key in ("proxy", "url", "http", "https", "server", "data", "items", "results", "proxies"):
             if key in value:
                 found.extend(_find_proxy_urls_in_json(value[key]))
-        for item in value.values():
-            found.extend(_find_proxy_urls_in_json(item))
     return found
 
 
@@ -271,6 +274,57 @@ def _write_proxy_cache(data: dict):
         os.makedirs(directory, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=True, indent=2, sort_keys=True)
+
+
+def _proxy_config_path() -> str | None:
+    path = _DEFAULT_PROXY_CONFIG_FILE
+    if not path or path.lower() in _FALSE_VALUES:
+        return None
+    return os.path.expanduser(path)
+
+
+def _read_proxy_config() -> dict:
+    path = _proxy_config_path()
+    if not path or not os.path.exists(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return data if isinstance(data, dict) else {}
+
+
+def _proxy_urls_from_config_value(value) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        found = []
+        for item in value:
+            found.extend(_proxy_urls_from_config_value(item))
+        return found
+    if isinstance(value, dict):
+        if value.get("proxy_url"):
+            return [value["proxy_url"]]
+        found = []
+        for key in ("proxy_urls", "proxies", "items"):
+            if key in value:
+                found.extend(_proxy_urls_from_config_value(value[key]))
+        return found
+    return []
+
+
+def _load_configured_proxy_urls(country: str) -> list[str]:
+    data = _read_proxy_config()
+    if not data:
+        return []
+    country = country.upper()
+    regions = data.get("regions", data)
+    if not isinstance(regions, dict):
+        return []
+    value = regions.get(country) or regions.get(country.lower())
+    return _dedupe_proxy_urls([
+        proxy_url
+        for proxy in _proxy_urls_from_config_value(value)
+        if (proxy_url := _maybe_normalize_proxy_url(proxy))
+    ])
 
 
 # ==========================================================================
@@ -483,6 +537,17 @@ class DQSGClient:
             print(f"  [proxy] {reason}; fetching {country} proxy automatically")
         else:
             print(f"  [proxy] fetching {country} proxy automatically")
+        configured_proxies = _load_configured_proxy_urls(country)
+        if configured_proxies:
+            print(f"  [proxy] testing {len(configured_proxies)} configured {country} proxy candidate(s)")
+            for configured_proxy in configured_proxies:
+                for probe_url in _proxy_url_variants(configured_proxy):
+                    if self._proxy_probe(probe_url):
+                        self._set_proxy(probe_url, country=country)
+                        self._save_cached_proxy(country, probe_url)
+                        return True
+                    self.debug_log(f"  [proxy] configured proxy failed: {_redact_proxy_url(probe_url)}")
+            print(f"  [proxy] configured {country} proxies failed; refreshing")
         cached_proxy = self._load_cached_proxy(country)
         if cached_proxy:
             for probe_url in _proxy_url_variants(cached_proxy):
