@@ -437,6 +437,17 @@ def _add_result_stat_override_args(parser):
     )
 
 
+def _add_times_arg(parser, *, help_text: str = "Repeat each battle this many times"):
+    parser.add_argument("--times", type=int, default=1, help=help_text)
+
+
+def _positive_times(args) -> int:
+    times = getattr(args, "times", 1)
+    if times <= 0:
+        raise SystemExit("--times must be positive.")
+    return times
+
+
 def _result_stat_override_kwargs(args) -> dict:
     return {
         "damage_taken": 199 if args.damage_taken is None else args.damage_taken,
@@ -3037,8 +3048,10 @@ def cmd_battle_stage(args):
     stage_master_id = config["stage_master_id"]
     template_stage_id = config["template_stage_id"]
     result_stat_kwargs = _result_stat_override_kwargs(args)
+    times = _positive_times(args)
 
     print(f"=== account {_account_ref(record)} ===")
+    print(f"=== battle-stage {stage_key} ({stage_master_id}) x{times} ===")
     print("=== masterdata/get_version ===")
     resp = client.masterdata_get_version()
     _check(resp, "masterdata/get_version")
@@ -3052,50 +3065,55 @@ def cmd_battle_stage(args):
         _surrender_login_resume_for_battle(client, resp, context=f"battle-stage {stage_key}")
         resume_session_id = None
 
-    total_steps = 1 + len(config["before_start"]) + len(config["after_start"]) + (0 if resume_session_id is not None else 1)
+    total_steps = (
+        len(config["before_start"])
+        + len(config["after_start"])
+        + (2 * times)
+    )
     stepper = _StepPrinter(total_steps)
 
-    if resume_session_id is not None:
-        stepper(f"resume stage {stage_key} with InGameSessionId={resume_session_id}")
-    else:
-        for step_action in config["before_start"]:
-            step_label = step_action[0].replace("_", "/")
-            if step_action[1] is not None:
-                step_label = f"{step_label}({step_action[1]})"
-            stepper(step_label)
-            _run_battle_stage_step(client, client.last_login_response_raw, step_action)
+    for step_action in config["before_start"]:
+        step_label = step_action[0].replace("_", "/")
+        if step_action[1] is not None:
+            step_label = f"{step_label}({step_action[1]})"
+        stepper(step_label)
+        _run_battle_stage_step(client, client.last_login_response_raw, step_action)
+
+    for run_no in range(1, times + 1):
+        if times > 1:
+            print(f"\n=== battle-stage {stage_key} run {run_no}/{times} ===")
 
         stepper(f"in_game/start({stage_master_id})")
         resp = client.in_game_start(stage_master_id, deck_index=1)
         _check(resp, f"in_game/start({stage_master_id})")
 
-        for step_action in config["after_start"]:
-            step_label = step_action[0].replace("_", "/")
-            if step_action[1] is not None:
-                step_label = f"{step_label}({step_action[1]})"
-            stepper(step_label)
-            _run_battle_stage_step(client, client.last_login_response_raw, step_action)
+        if run_no == 1:
+            for step_action in config["after_start"]:
+                step_label = step_action[0].replace("_", "/")
+                if step_action[1] is not None:
+                    step_label = f"{step_label}({step_action[1]})"
+                stepper(step_label)
+                _run_battle_stage_step(client, client.last_login_response_raw, step_action)
 
-    stepper(f"in_game/result({stage_master_id})")
-    resp = _submit_in_game_result_with_resume(
-        client,
-        stage_master_id=stage_master_id,
-        template_stage_id=template_stage_id,
-        in_game_session_id=resume_session_id,
-        **result_stat_kwargs,
-    )
-    _check(resp, f"in_game/result({stage_master_id})")
+        stepper(f"in_game/result({stage_master_id})")
+        resp = _submit_in_game_result_with_resume(
+            client,
+            stage_master_id=stage_master_id,
+            template_stage_id=template_stage_id,
+            **result_stat_kwargs,
+        )
+        _check(resp, f"in_game/result({stage_master_id})")
 
     saved = _save_client_account(
         client,
         args,
         progress=f"battle_{stage_key}_complete",
-        last_command="battle-stage",
+        last_command=f"battle-stage-{stage_key}x{times}",
         snapshot=login_snapshot,
     )
 
     print("\n" + "=" * 50)
-    print(f"Battle stage complete: {stage_key}")
+    print(f"Battle stage complete: {stage_key}. Runs: {times}")
     _print_saved_account(saved, _store_path(args))
     print("=" * 50)
 
@@ -3229,6 +3247,7 @@ def _resolve_story_template_stage_id(chapter: int, stage: int, *, hard: bool) ->
 def _run_story_stage_command(args, *, hard: bool):
     client, record = _load_client_for_account(args)
     result_stat_kwargs = _result_stat_override_kwargs(args)
+    times = _positive_times(args)
     start_chapter, start_stage = _parse_story_stage_key(args.start_stage)
     if args.end_stage:
         end_chapter, end_stage = _parse_story_stage_key(args.end_stage)
@@ -3248,7 +3267,7 @@ def _run_story_stage_command(args, *, hard: bool):
     display_mode = "困难剧情" if hard else "剧情"
 
     print(f"=== account {_account_ref(record)} ===")
-    print(f"=== {display_mode} {range_label} ===")
+    print(f"=== {display_mode} {range_label} x{times} ===")
 
     print("\n=== masterdata/get_version ===")
     resp = client.masterdata_get_version()
@@ -3267,25 +3286,26 @@ def _run_story_stage_command(args, *, hard: bool):
         stage_key = f"{chapter}-{stage}"
         stage_master_id = _story_stage_master_id(chapter, stage, hard=hard)
         template_stage_id = _resolve_story_template_stage_id(chapter, stage, hard=hard)
-        print(f"\n=== {display_mode} {stage_key} ({stage_master_id}) ===")
+        for run_no in range(1, times + 1):
+            print(f"\n=== {display_mode} {stage_key} ({stage_master_id}) run {run_no}/{times} ===")
 
-        if resume_session_id is not None:
-            print(f"\n=== resume in_game/session ({resume_session_id}) ===")
-        else:
-            print(f"\n=== in_game/start ({stage_master_id}) ===")
-            resp = client.in_game_start(stage_master_id, deck_index=1)
-            _check(resp, f"in_game/start({stage_master_id})")
+            if resume_session_id is not None:
+                print(f"\n=== resume in_game/session ({resume_session_id}) ===")
+            else:
+                print(f"\n=== in_game/start ({stage_master_id}) ===")
+                resp = client.in_game_start(stage_master_id, deck_index=1)
+                _check(resp, f"in_game/start({stage_master_id})")
 
-        print(f"\n=== in_game/result ({stage_master_id}) ===")
-        resp = _submit_in_game_result_with_resume(
-            client,
-            stage_master_id=stage_master_id,
-            template_stage_id=template_stage_id,
-            in_game_session_id=resume_session_id,
-            **result_stat_kwargs,
-        )
-        _check(resp, f"in_game/result({stage_master_id})")
-        resume_session_id = None
+            print(f"\n=== in_game/result ({stage_master_id}) ===")
+            resp = _submit_in_game_result_with_resume(
+                client,
+                stage_master_id=stage_master_id,
+                template_stage_id=template_stage_id,
+                in_game_session_id=resume_session_id,
+                **result_stat_kwargs,
+            )
+            _check(resp, f"in_game/result({stage_master_id})")
+            resume_session_id = None
 
     final_stage_key = f"{chapter}-{end_stage}"
 
@@ -3293,12 +3313,12 @@ def _run_story_stage_command(args, *, hard: bool):
         client,
         args,
         progress=f"{command_name}_{final_stage_key}_complete",
-        last_command=f"{command_name}-{range_label}",
+        last_command=f"{command_name}-{range_label}x{times}",
         snapshot=login_snapshot,
     )
 
     print("\n" + "=" * 50)
-    print(f"{display_mode} complete: {range_label}")
+    print(f"{display_mode} complete: {range_label}. Runs per stage: {times}")
     _print_saved_account(saved, _store_path(args))
     print("=" * 50)
 
@@ -3410,9 +3430,7 @@ def cmd_jqhd_qd(args, enemy_key: str, level_text: str):
     stage_master_id = _jqhd_qd_stage_master_id(enemy_key, level)
     score = args.score if args.score is not None else _JQHD_QD_DEFAULT_SCORES[level]
     result_stat_kwargs = _result_stat_override_kwargs(args)
-    times = args.times
-    if times <= 0:
-        raise SystemExit("--times must be positive.")
+    times = _positive_times(args)
     client, record = _load_client_for_account(args)
 
     print(f"=== account {_account_ref(record)} ===")
@@ -3492,9 +3510,7 @@ def cmd_jqhd_special(args, special_key: str, level_text: str):
     stage_master_id = stage_config["stage"]
     template_stage_id = stage_config["template"]
     result_stat_kwargs = _result_stat_override_kwargs(args)
-    times = args.times
-    if times <= 0:
-        raise SystemExit("--times must be positive.")
+    times = _positive_times(args)
     client, record = _load_client_for_account(args)
 
     print(f"=== account {_account_ref(record)} ===")
@@ -3553,9 +3569,7 @@ def cmd_jqhd_special(args, special_key: str, level_text: str):
 
 
 def cmd_jqhd(args):
-    times = args.times
-    if times <= 0:
-        raise SystemExit("--times must be positive.")
+    times = _positive_times(args)
 
     if args.start_stage.lower() == "qd":
         if not args.end_stage or not args.extra_stage:
@@ -4065,7 +4079,7 @@ def cmd_yc(args):
     result_stat_kwargs = _result_stat_override_kwargs(args)
     level_str = args.level
     score = args.score
-    times = args.times
+    times = _positive_times(args)
 
     if dungeon_type == "slm1":
         dungeon_type = "slm"
@@ -4196,9 +4210,7 @@ def cmd_hd(args):
     event_type = args.type
     result_stat_kwargs = _result_stat_override_kwargs(args)
     level_str = args.level
-    times = args.times
-    if times <= 0:
-        raise SystemExit("--times must be positive.")
+    times = _positive_times(args)
     if event_type in {"jx", "xmss", "shn"} and level_str is None:
         level_str = "1"
     if level_str is None:
@@ -4280,9 +4292,7 @@ def cmd_tz(args):
     zone = args.zone
     result_stat_kwargs = _result_stat_override_kwargs(args)
     element = args.element
-    times = args.times
-    if times <= 0:
-        raise SystemExit("--times must be positive.")
+    times = _positive_times(args)
     if element is None or args.level is None:
         raise SystemExit("tz st requires: tz st hb 1")
     try:
@@ -4367,9 +4377,7 @@ def _run_xl_command(
 
     client, record = _load_client_for_account(args)
     result_stat_kwargs = _result_stat_override_kwargs(args)
-    times = args.times
-    if times <= 0:
-        raise SystemExit("--times must be positive.")
+    times = _positive_times(args)
     config = configs.get(level)
     if config is None:
         raise SystemExit(f"Unknown {command_name} level: {level}. Available: {sorted(configs)}")
@@ -4464,9 +4472,10 @@ def cmd_juxiang(args):
     client, record = _load_client_for_account(args)
     score = args.score
     result_stat_kwargs = _result_stat_override_kwargs(args)
+    times = _positive_times(args)
 
     print(f"=== account {_account_ref(record)} ===")
-    print(f"=== 巨像 (Colossus) — score={score} ===")
+    print(f"=== 巨像 (Colossus) - score={score} x{times} ===")
 
     print("\n=== masterdata/get_version ===")
     resp = client.masterdata_get_version()
@@ -4477,27 +4486,29 @@ def cmd_juxiang(args):
     _check(resp, "login/login")
     login_snapshot = _build_account_snapshot_from_login(client)
 
-    # Start + result with 500 retry SOP
-    _run_scored_dungeon(
-        client,
-        _JUXIANG_STAGE_MASTER_ID,
-        build_result_body=lambda sid, start_response: load_juxiang_result(
-            score=score,
-            in_game_session_id=sid,
-            **result_stat_kwargs,
-        ),
-        login_resp=resp,
-    )
+    for idx in range(1, times + 1):
+        if times > 1:
+            print(f"\n=== Juxiang run {idx}/{times} ===")
+        _run_scored_dungeon(
+            client,
+            _JUXIANG_STAGE_MASTER_ID,
+            build_result_body=lambda sid, start_response: load_juxiang_result(
+                score=score,
+                in_game_session_id=sid,
+                **result_stat_kwargs,
+            ),
+            login_resp=resp if idx == 1 else None,
+        )
 
     saved = _save_client_account(
         client,
         args,
-        last_command="juxiang",
+        last_command=f"juxiangx{times}",
         snapshot=login_snapshot,
     )
 
     print(f"\n{'='*50}")
-    print(f"巨像 complete. Score submitted: {score}")
+    print(f"巨像 complete. Score submitted: {score}. Runs: {times}")
     _print_saved_account(saved, _store_path(args))
     print("=" * 50)
 
@@ -4671,6 +4682,7 @@ def build_parser():
         help="Fight a recorded stage; surrender unfinished battle sessions before starting a new run",
     )
     battle_stage_parser.add_argument("--account", help="Saved account user_id, label, or latest")
+    _add_times_arg(battle_stage_parser, help_text="Repeat the battle-stage start/result this many times")
     battle_stage_parser.add_argument("--stage", required=True, help="Recorded stage key such as 1-1, 1-2, 1-3, 1-4")
     _add_result_stat_override_args(battle_stage_parser)
     battle_stage_parser.set_defaults(func=cmd_battle_stage)
@@ -4680,6 +4692,7 @@ def build_parser():
         help="Run normal story stages; e.g. jq 2-1 or jq 2-1 2-10",
     )
     jq_parser.add_argument("--account", help="Saved account user_id, label, or latest")
+    _add_times_arg(jq_parser, help_text="Repeat each normal story stage this many times")
     jq_parser.add_argument("start_stage", help="Story stage key such as 2-1")
     jq_parser.add_argument("end_stage", nargs="?", help="Optional range end such as 2-10")
     _add_result_stat_override_args(jq_parser)
@@ -4690,6 +4703,7 @@ def build_parser():
         help="Run hard story stages; e.g. jqh 2-1 or jqh 2-1 2-10",
     )
     jqh_parser.add_argument("--account", help="Saved account user_id, label, or latest")
+    _add_times_arg(jqh_parser, help_text="Repeat each hard story stage this many times")
     jqh_parser.add_argument("start_stage", help="Story stage key such as 2-1")
     jqh_parser.add_argument("end_stage", nargs="?", help="Optional range end such as 2-10")
     _add_result_stat_override_args(jqh_parser)
@@ -4704,7 +4718,7 @@ def build_parser():
         "--score", type=int, default=None,
         help="Score override for jqhd qd; defaults: 1=8001, 2=24000, 3=72000, 4=216000, 5=54001",
     )
-    jqhd_parser.add_argument("--times", type=int, default=1, help="Repeat each jqhd stage this many times")
+    _add_times_arg(jqhd_parser, help_text="Repeat each jqhd stage this many times")
     jqhd_parser.add_argument("start_stage", help="Event stage key such as 1-1, qd, xl, or st")
     jqhd_parser.add_argument("end_stage", nargs="?", help="Optional range end such as 1-10, qd type, or xl level")
     jqhd_parser.add_argument("extra_stage", nargs="?", help="qd level, e.g. jqhd qd l 1")
@@ -4761,6 +4775,7 @@ def build_parser():
         "--score", type=int, required=True,
         help="Damage score to submit for the battle result",
     )
+    _add_times_arg(juxiang_parser, help_text="Repeat the juxiang battle this many times")
     _add_result_stat_override_args(juxiang_parser)
     juxiang_parser.set_defaults(func=cmd_juxiang)
 
@@ -4769,7 +4784,7 @@ def build_parser():
         help="Run 活动 (Event) scored battles",
     )
     hd_parser.add_argument("--account", help="Saved account user_id, label, or latest")
-    hd_parser.add_argument("--times", type=int, default=1, help="Repeat the hd stage this many times")
+    _add_times_arg(hd_parser, help_text="Repeat the hd stage this many times")
     hd_parser.add_argument(
         "type", choices=["qdjf", "jx", "xmss", "shn", "cjmwmg"],
         help=(
@@ -4795,7 +4810,7 @@ def build_parser():
         help="Run 挑战 dungeons",
     )
     tz_parser.add_argument("--account", help="Saved account user_id, label, or latest")
-    tz_parser.add_argument("--times", type=int, default=1, help="Repeat the tz stage this many times")
+    _add_times_arg(tz_parser, help_text="Repeat the tz stage this many times")
     tz_parser.add_argument(
         "zone",
         choices=["st"],
@@ -4826,12 +4841,7 @@ def build_parser():
         choices=["1", "2"],
         help="协力 stage slot",
     )
-    xl_parser.add_argument(
-        "--times",
-        type=int,
-        default=1,
-        help="Repeat count (default: 1)",
-    )
+    _add_times_arg(xl_parser, help_text="Repeat count (default: 1)")
     _add_result_stat_override_args(xl_parser)
     xl_parser.set_defaults(func=cmd_xl)
 
@@ -4857,10 +4867,7 @@ def build_parser():
         "--count", type=int, default=3,
         help="Skip count for tg mode (default: 3)",
     )
-    yc_parser.add_argument(
-        "--times", type=int, default=1,
-        help="Repeat count for battle mode (default: 1)",
-    )
+    _add_times_arg(yc_parser, help_text="Repeat count for battle mode (default: 1)")
     _add_result_stat_override_args(yc_parser)
     yc_parser.set_defaults(func=cmd_yc)
 
