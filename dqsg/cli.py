@@ -410,6 +410,64 @@ def _prepare_saved_account_runtime(args, *, record: dict | None = None, client: 
     return client, record, login_resp, login_snapshot
 
 
+def _add_result_stat_override_args(parser):
+    parser.add_argument(
+        "--damage-taken",
+        type=int,
+        default=None,
+        help="Override DamageTaken in the result payload; default is 199",
+    )
+    parser.add_argument(
+        "--damage-taken-count",
+        type=int,
+        default=None,
+        help="Override DamageTakenCount in the result payload; default uses the captured bin value",
+    )
+    parser.add_argument(
+        "--dead-count",
+        type=int,
+        default=None,
+        help="Override DeadCount in the result payload; default is 0",
+    )
+    parser.add_argument(
+        "--clear-time",
+        type=int,
+        default=None,
+        help="Override ClearTime in the result payload; default is 179",
+    )
+
+
+def _result_stat_override_kwargs(args) -> dict:
+    return {
+        "damage_taken": 199 if args.damage_taken is None else args.damage_taken,
+        "damage_taken_count": args.damage_taken_count,
+        "dead_count": 0 if args.dead_count is None else args.dead_count,
+        "clear_time": 179 if args.clear_time is None else args.clear_time,
+    }
+
+
+def _surrender_resume_session(client: DQSGClient, session_id: int, *, context: str = "battle"):
+    print(f"\n=== in_game/surrender ({session_id}) ===")
+    print(f"  [resume] {context}: surrender unfinished session before fresh start")
+    resp = client.in_game_surrender(session_id)
+    _check(resp, "in_game/surrender")
+    return resp
+
+
+def _surrender_login_resume_for_battle(
+    client: DQSGClient,
+    login_resp: dict | None,
+    *,
+    context: str = "battle",
+):
+    session_id = login_resp.get("InGameSessionId") if login_resp else None
+    if session_id is None:
+        return None
+    _surrender_resume_session(client, session_id, context=context)
+    login_resp["InGameSessionId"] = None
+    return session_id
+
+
 def _run_daily_home_fetch_info(client: DQSGClient, step: _StepPrinter | None = None):
     if step:
         step("home/fetch_info")
@@ -1102,30 +1160,50 @@ def _submit_in_game_result_with_resume(
     stage_master_id: int = None,
     template_stage_id: int = None,
     in_game_session_id: int = None,
+    start_response: dict = None,
+    damage_taken: int = None,
+    damage_taken_count: int = None,
+    dead_count: int = None,
+    clear_time: int = None,
 ):
     """Submit in_game/result with automatic retry on HTTP 500.
 
-    On 500, re-logins to obtain InGameSessionId, then retries.
+    On 500, re-logins to detect the unfinished battle. Battle commands must
+    surrender that session instead of resuming it with another result payload.
 
     Two modes:
-      - build_result_body: callable(in_game_session_id) -> bytes
+      - build_result_body: callable(in_game_session_id, start_response) -> bytes
         Used for raw-body submissions (juxiang, yc dungeons).
       - stage_master_id/template_stage_id: template-based submissions.
     """
     max_attempts = 3
+    if start_response is None:
+        start_response = getattr(client, "last_in_game_start_response", None)
+        if (
+            start_response is not None
+            and stage_master_id is not None
+            and start_response.get("_stage_master_id") not in (None, stage_master_id)
+        ):
+            start_response = None
     current_session_id = in_game_session_id
+    if current_session_id is None and start_response is not None:
+        current_session_id = start_response.get("SessionId")
     last_exc = None
 
     for attempt in range(1, max_attempts + 1):
         try:
             if build_result_body is not None:
-                raw_body = build_result_body(current_session_id)
+                raw_body = build_result_body(current_session_id, start_response)
                 resp = client.in_game_result(raw_body=raw_body)
             else:
                 resp = client.in_game_result(
                     stage_master_id=stage_master_id,
                     template_stage_id=template_stage_id,
                     in_game_session_id=current_session_id,
+                    damage_taken=damage_taken,
+                    damage_taken_count=damage_taken_count,
+                    dead_count=dead_count,
+                    clear_time=clear_time,
                 )
         except requests.HTTPError as exc:
             if exc.response is None or exc.response.status_code != 500:
@@ -1137,14 +1215,22 @@ def _submit_in_game_result_with_resume(
                 print(
                     f"  [resume] in_game/result hit {_color('HTTP 500', _RED)} "
                     f"on attempt {attempt}/{max_attempts}, "
-                    "sleeping 2s before refreshing InGameSessionId"
+                    "sleeping 2s before surrendering InGameSessionId"
                 )
             time.sleep(2)
             login_resp = client.login_login(first_login=False)
             _check(login_resp, "login/login resume")
-            current_session_id = login_resp.get("InGameSessionId")
-            if current_session_id is None:
+            surrendered_session_id = _surrender_login_resume_for_battle(
+                client,
+                login_resp,
+                context="in_game/result HTTP 500",
+            )
+            if surrendered_session_id is None:
                 raise RuntimeError("resume login did not return InGameSessionId") from exc
+            raise RuntimeError(
+                "in_game/result hit HTTP 500; surrendered unfinished session "
+                "instead of resuming it"
+            ) from exc
         else:
             _receive_in_game_result_ad_chance(client, resp)
             return resp
@@ -1194,44 +1280,52 @@ def _run_scored_dungeon(client, stage_master_id, build_result_body, login_resp=N
     """Run a scored dungeon: in_game/start + in_game/result as a single SOP.
 
     Handles HTTP 500 on both start and result:
-      - If login returned InGameSessionId (unfinished battle), skips start.
-      - If start gets 500, re-logins to get InGameSessionId, then submits result.
-      - If result gets 500, re-logins and retries (via _submit_in_game_result_with_resume).
+      - If login returned InGameSessionId (unfinished battle), surrenders it.
+      - If start gets 500, re-logins, surrenders the unfinished session, then restarts.
+      - If result gets 500, re-logins and surrenders instead of resuming.
 
     Args:
         client: DQSGClient instance (already logged in).
         stage_master_id: Stage to fight.
-        build_result_body: callable(in_game_session_id) -> bytes.
+        build_result_body: callable(in_game_session_id, start_response) -> bytes.
         login_resp: The login/login response dict (to check for existing InGameSessionId).
     """
-    existing_session_id = None
     if login_resp:
-        existing_session_id = login_resp.get("InGameSessionId")
+        _surrender_login_resume_for_battle(
+            client,
+            login_resp,
+            context=f"in_game/start({stage_master_id})",
+        )
+    start_response = None
+    existing_session_id = None
 
-    if existing_session_id:
-        if client.debug:
-            print(
-                f"  [resume] existing InGameSessionId={existing_session_id}, "
-                "skipping in_game/start"
-            )
-    else:
+    for start_attempt in range(1, 3):
         if client.debug:
             print(f"\n=== in_game/start ({stage_master_id}) ===")
         try:
             resp = client.in_game_start(stage_master_id, deck_index=1)
             _check(resp, "in_game/start")
+            start_response = resp
+            existing_session_id = resp.get("SessionId")
+            break
         except requests.HTTPError as exc:
             if exc.response is None or exc.response.status_code != 500:
+                raise
+            if start_attempt >= 2:
                 raise
             if client.debug:
                 print(
                     f"  [resume] in_game/start hit {_color('HTTP 500', _RED)}, "
-                    "refreshing InGameSessionId"
+                    "refreshing InGameSessionId before surrender"
                 )
             login_resp = client.login_login(first_login=False)
             _check(login_resp, "login/login resume")
-            existing_session_id = login_resp.get("InGameSessionId")
-            if existing_session_id is None:
+            surrendered_session_id = _surrender_login_resume_for_battle(
+                client,
+                login_resp,
+                context=f"in_game/start({stage_master_id}) retry",
+            )
+            if surrendered_session_id is None:
                 raise RuntimeError(
                     "resume login did not return InGameSessionId"
                 ) from exc
@@ -1242,6 +1336,7 @@ def _run_scored_dungeon(client, stage_master_id, build_result_body, login_resp=N
         client,
         build_result_body=build_result_body,
         in_game_session_id=existing_session_id,
+        start_response=start_response,
     )
     _check(resp, "in_game/result")
     return resp
@@ -1814,7 +1909,10 @@ _HOME_CUTSCENES = [
 def _flow2_impl(args, client, record, login_snapshot, login_resp):
     """Chapter 1-1: battle -> gacha -> equip weapon -> home unlock."""
     resume_session_id = login_resp.get("InGameSessionId")
-    step = _StepPrinter(19 if resume_session_id else 23)
+    if resume_session_id is not None:
+        _surrender_login_resume_for_battle(client, login_resp, context="flow2 stage 1-1")
+        resume_session_id = None
+    step = _StepPrinter(23)
     login_user_model = _parse_login_user_model_basics(client.last_login_response_raw)
     deck = login_user_model["deck"]
     if not deck:
@@ -2385,6 +2483,7 @@ def cmd_dump_flow2_start(args):
     print("\n=== login/login ===")
     resp = client.login_login(first_login=False)
     _check(resp, "login/login")
+    _surrender_login_resume_for_battle(client, resp, context="dump-flow2-start")
 
     print("\n=== tutorial/read (StageFirst) ===")
     resp = client.tutorial_read(TUTORIAL_STEP_STAGE_FIRST)
@@ -2518,6 +2617,9 @@ def _flow3_impl(args, client, record, login_snapshot, login_resp):
     """Progress a saved account through the recorded 1-2 -> 1-3 flow."""
     progress = record.get("progress")
     resume_session_id = login_resp.get("InGameSessionId")
+    if resume_session_id is not None:
+        _surrender_login_resume_for_battle(client, login_resp, context="flow3 stage")
+        resume_session_id = None
     step = _StepPrinter(11 if progress != "flow3_stage_1_2" else 2)
 
     if progress != "flow3_stage_1_2":
@@ -2640,6 +2742,7 @@ def cmd_flow3(args):
 @_saved_flow(4)
 def _flow4_impl(args, client, record, login_snapshot, login_resp):
     """Progress a saved account through the recorded 1-4 + rewards/tutorial flow."""
+    _surrender_login_resume_for_battle(client, login_resp, context="flow4")
     step = _StepPrinter(30)
 
     step(f"adventure/read({_FLOW4_ADVENTURE})")
@@ -2893,6 +2996,7 @@ def cmd_flow5(args):
 @_saved_flow(6)
 def _flow6_impl(args, client, record, login_snapshot, login_resp):
     """Progress a saved account through chapter-1 hard mode intro, stages, and rewards."""
+    _surrender_login_resume_for_battle(client, login_resp, context="flow6")
     step = _StepPrinter(len(_FLOW6_STAGE_KEYS) + 1)
     for stage_key in _FLOW6_STAGE_KEYS:
         step(f"battle-stage {stage_key}")
@@ -2932,6 +3036,7 @@ def cmd_battle_stage(args):
 
     stage_master_id = config["stage_master_id"]
     template_stage_id = config["template_stage_id"]
+    result_stat_kwargs = _result_stat_override_kwargs(args)
 
     print(f"=== account {_account_ref(record)} ===")
     print("=== masterdata/get_version ===")
@@ -2943,6 +3048,9 @@ def cmd_battle_stage(args):
     _check(resp, "login/login")
     login_snapshot = _build_account_snapshot_from_login(client)
     resume_session_id = resp.get("InGameSessionId")
+    if resume_session_id is not None:
+        _surrender_login_resume_for_battle(client, resp, context=f"battle-stage {stage_key}")
+        resume_session_id = None
 
     total_steps = 1 + len(config["before_start"]) + len(config["after_start"]) + (0 if resume_session_id is not None else 1)
     stepper = _StepPrinter(total_steps)
@@ -2974,6 +3082,7 @@ def cmd_battle_stage(args):
         stage_master_id=stage_master_id,
         template_stage_id=template_stage_id,
         in_game_session_id=resume_session_id,
+        **result_stat_kwargs,
     )
     _check(resp, f"in_game/result({stage_master_id})")
 
@@ -3119,6 +3228,7 @@ def _resolve_story_template_stage_id(chapter: int, stage: int, *, hard: bool) ->
 
 def _run_story_stage_command(args, *, hard: bool):
     client, record = _load_client_for_account(args)
+    result_stat_kwargs = _result_stat_override_kwargs(args)
     start_chapter, start_stage = _parse_story_stage_key(args.start_stage)
     if args.end_stage:
         end_chapter, end_stage = _parse_story_stage_key(args.end_stage)
@@ -3149,6 +3259,9 @@ def _run_story_stage_command(args, *, hard: bool):
     _check(resp, "login/login")
     login_snapshot = _build_account_snapshot_from_login(client)
     resume_session_id = resp.get("InGameSessionId")
+    if resume_session_id is not None:
+        _surrender_login_resume_for_battle(client, resp, context=f"{display_mode} {range_label}")
+        resume_session_id = None
 
     for stage in stage_numbers:
         stage_key = f"{chapter}-{stage}"
@@ -3169,6 +3282,7 @@ def _run_story_stage_command(args, *, hard: bool):
             stage_master_id=stage_master_id,
             template_stage_id=template_stage_id,
             in_game_session_id=resume_session_id,
+            **result_stat_kwargs,
         )
         _check(resp, f"in_game/result({stage_master_id})")
         resume_session_id = None
@@ -3197,7 +3311,7 @@ def cmd_jqh(args):
     _run_story_stage_command(args, hard=True)
 
 
-_JQHD_MAX_CHAPTER = 13
+_JQHD_MAX_CHAPTER = 15
 
 _JQHD_STAGE_IDS = {
     (chapter, 1): 30242100 + chapter
@@ -3228,6 +3342,21 @@ _JQHD_QD_ENEMIES = {
     "em": {"name": "强敌-恶魔骑士", "base_stage_id": 30243021},
 }
 
+_JQHD_SPECIAL_STAGE_IDS = {
+    "st": {
+        1: {
+            "name": "饲堂",
+            "stage": 30241101,
+            "template": 30241101,
+        },
+        2: {
+            "name": "饲堂",
+            "stage": 30241102,
+            "template": 30241101,
+        },
+    },
+}
+
 
 def _jqhd_stage_master_id(chapter: int, stage: int) -> int:
     stage_master_id = _JQHD_STAGE_IDS.get((chapter, stage))
@@ -3239,9 +3368,13 @@ def _jqhd_stage_master_id(chapter: int, stage: int) -> int:
 
 def _jqhd_template_stage_id(chapter: int, stage: int = None) -> int:
     if stage == 1:
+        if 14 <= chapter <= _JQHD_MAX_CHAPTER:
+            return 30242114
         return 30242101
     if stage == 2:
-        if 7 <= chapter <= 13:
+        if chapter == 14:
+            return 30242214
+        if 7 <= chapter <= _JQHD_MAX_CHAPTER:
             return 30242211
         return 30242203
     template_stage_id = _JQHD_TEMPLATE_STAGE_IDS.get(chapter)
@@ -3276,6 +3409,7 @@ def cmd_jqhd_qd(args, enemy_key: str, level_text: str):
         raise SystemExit(f"Unsupported jqhd qd type '{enemy_key}'. Supported: {supported}")
     stage_master_id = _jqhd_qd_stage_master_id(enemy_key, level)
     score = args.score if args.score is not None else _JQHD_QD_DEFAULT_SCORES[level]
+    result_stat_kwargs = _result_stat_override_kwargs(args)
     times = args.times
     if times <= 0:
         raise SystemExit("--times must be positive.")
@@ -3293,6 +3427,9 @@ def cmd_jqhd_qd(args, enemy_key: str, level_text: str):
     _check(resp, "login/login")
     login_snapshot = _build_account_snapshot_from_login(client)
     resume_session_id = resp.get("InGameSessionId")
+    if resume_session_id is not None:
+        _surrender_login_resume_for_battle(client, resp, context=f"jqhd qd {enemy_key} {level}")
+        resume_session_id = None
 
     for run_no in range(1, times + 1):
         print(f"\n--- run {run_no}/{times} ---")
@@ -3307,13 +3444,16 @@ def cmd_jqhd_qd(args, enemy_key: str, level_text: str):
         resp = _submit_in_game_result_with_resume(
             client,
             stage_master_id=stage_master_id,
-            build_result_body=lambda sid: load_scored_result(
+            build_result_body=lambda sid, start_response: load_scored_result(
                 stage_master_id=stage_master_id,
                 score=score,
                 template_stage_id=_JQHD_QD_TEMPLATE_STAGE_ID,
                 in_game_session_id=sid,
+                start_response=start_response,
+                **result_stat_kwargs,
             ),
             in_game_session_id=resume_session_id,
+            **result_stat_kwargs,
         )
         _check(resp, f"in_game/result({stage_master_id})")
         resume_session_id = None
@@ -3328,6 +3468,86 @@ def cmd_jqhd_qd(args, enemy_key: str, level_text: str):
 
     print("\n" + "=" * 50)
     print(f"{enemy['name']} Lv.{level} complete. Score: {score}. Runs: {times}")
+    _print_saved_account(saved, _store_path(args))
+    print("=" * 50)
+
+
+def cmd_jqhd_special(args, special_key: str, level_text: str):
+    from .battle_templates import load_battle_result
+
+    if not level_text.isdigit():
+        raise SystemExit(f"Invalid jqhd {special_key} level. Use format like: jqhd {special_key} 1")
+
+    special_key = special_key.lower()
+    level = int(level_text)
+    stages = _JQHD_SPECIAL_STAGE_IDS.get(special_key)
+    if stages is None:
+        supported = ", ".join(sorted(_JQHD_SPECIAL_STAGE_IDS))
+        raise SystemExit(f"Unsupported jqhd special type '{special_key}'. Supported: {supported}")
+    stage_config = stages.get(level)
+    if stage_config is None:
+        supported = ", ".join(str(level) for level in sorted(stages))
+        raise SystemExit(f"Unsupported jqhd {special_key} level {level}. Supported: {supported}")
+
+    stage_master_id = stage_config["stage"]
+    template_stage_id = stage_config["template"]
+    result_stat_kwargs = _result_stat_override_kwargs(args)
+    times = args.times
+    if times <= 0:
+        raise SystemExit("--times must be positive.")
+    client, record = _load_client_for_account(args)
+
+    print(f"=== account {_account_ref(record)} ===")
+    print(f"=== 活动剧情 {stage_config['name']} Lv.{level} ({stage_master_id}) ×{times} ===")
+
+    print("\n=== masterdata/get_version ===")
+    resp = client.masterdata_get_version()
+    _check(resp, "masterdata/get_version")
+
+    print("\n=== login/login ===")
+    resp = client.login_login(first_login=False)
+    _check(resp, "login/login")
+    login_snapshot = _build_account_snapshot_from_login(client)
+    resume_session_id = resp.get("InGameSessionId")
+    if resume_session_id is not None:
+        _surrender_login_resume_for_battle(client, resp, context=f"jqhd {special_key} {level}")
+        resume_session_id = None
+
+    for run_no in range(1, times + 1):
+        print(f"\n--- run {run_no}/{times} ---")
+        if resume_session_id is not None:
+            print(f"\n=== resume in_game/session ({resume_session_id}) ===")
+        else:
+            print(f"\n=== in_game/start ({stage_master_id}) ===")
+            resp = client.in_game_start(stage_master_id, deck_index=1)
+            _check(resp, f"in_game/start({stage_master_id})")
+
+        print(f"\n=== in_game/result ({stage_master_id}) ===")
+        resp = _submit_in_game_result_with_resume(
+            client,
+            build_result_body=lambda sid, start_response: load_battle_result(
+                stage_master_id=stage_master_id,
+                template_stage_id=template_stage_id,
+                in_game_session_id=sid,
+                start_response=start_response,
+                **result_stat_kwargs,
+            ),
+            in_game_session_id=resume_session_id,
+            **result_stat_kwargs,
+        )
+        _check(resp, f"in_game/result({stage_master_id})")
+        resume_session_id = None
+
+    saved = _save_client_account(
+        client,
+        args,
+        progress=f"jqhd_{special_key}_{level}_complete",
+        last_command=f"jqhd-{special_key}-{level}x{times}",
+        snapshot=login_snapshot,
+    )
+
+    print("\n" + "=" * 50)
+    print(f"活动剧情 {stage_config['name']} Lv.{level} complete. Runs: {times}")
     _print_saved_account(saved, _store_path(args))
     print("=" * 50)
 
@@ -3351,6 +3571,14 @@ def cmd_jqhd(args):
         cmd_jqhd_xl(args, args.end_stage)
         return
 
+    if args.start_stage.lower() in _JQHD_SPECIAL_STAGE_IDS:
+        if not args.end_stage:
+            raise SystemExit(f"jqhd {args.start_stage} requires a level. Use format like: jqhd {args.start_stage} 1")
+        if args.extra_stage:
+            raise SystemExit(f"jqhd {args.start_stage} accepts one level. Use format like: jqhd {args.start_stage} 1")
+        cmd_jqhd_special(args, args.start_stage, args.end_stage)
+        return
+
     if args.start_stage.lower() == "qdtz":
         raise SystemExit("jqhd qdtz was renamed. Use format like: jqhd qd l 1")
 
@@ -3358,6 +3586,7 @@ def cmd_jqhd(args):
         raise SystemExit("jqhd stage ranges accept at most two stage keys. Use format like: jqhd 1-1 1-2")
 
     client, record = _load_client_for_account(args)
+    result_stat_kwargs = _result_stat_override_kwargs(args)
     start_chapter, start_stage = _parse_story_stage_key(args.start_stage)
     if args.end_stage:
         end_chapter, end_stage = _parse_story_stage_key(args.end_stage)
@@ -3386,6 +3615,9 @@ def cmd_jqhd(args):
     _check(resp, "login/login")
     login_snapshot = _build_account_snapshot_from_login(client)
     resume_session_id = resp.get("InGameSessionId")
+    if resume_session_id is not None:
+        _surrender_login_resume_for_battle(client, resp, context=f"jqhd {range_label}")
+        resume_session_id = None
 
     for stage in stage_numbers:
         for run_no in range(1, times + 1):
@@ -3406,6 +3638,7 @@ def cmd_jqhd(args):
                 stage_master_id=stage_master_id,
                 template_stage_id=template_stage_id,
                 in_game_session_id=resume_session_id,
+                **result_stat_kwargs,
             )
             _check(resp, f"in_game/result({stage_master_id})")
             resume_session_id = None
@@ -3829,6 +4062,7 @@ def cmd_yc(args):
     from .battle_templates import load_scored_result, read_template_score
 
     dungeon_type = args.type
+    result_stat_kwargs = _result_stat_override_kwargs(args)
     level_str = args.level
     score = args.score
     times = args.times
@@ -3874,6 +4108,7 @@ def cmd_yc(args):
         resp = client.login_login(first_login=False)
         _check(resp, "login/login")
         login_snapshot = _build_account_snapshot_from_login(client)
+        _surrender_login_resume_for_battle(client, resp, context=f"yc {dungeon_type} skip")
 
         print(f"\n=== in_game/skip_stage ({stage_id}, count={skip_count}) ===")
         resp = client.in_game_skip_stage(stage_id, count=skip_count)
@@ -3923,6 +4158,7 @@ def cmd_yc(args):
     resp = client.login_login(first_login=False)
     _check(resp, "login/login")
     login_snapshot = _build_account_snapshot_from_login(client)
+    _surrender_login_resume_for_battle(client, resp, context=f"yc {dungeon_type} {level}")
 
     for idx in range(1, times + 1):
         if times > 1:
@@ -3930,14 +4166,16 @@ def cmd_yc(args):
         _run_scored_dungeon(
             client,
             stage_id,
-            build_result_body=lambda sid: load_scored_result(
+            build_result_body=lambda sid, start_response: load_scored_result(
                 stage_master_id=stage_id,
                 score=score,
                 template_stage_id=template_id,
                 in_game_session_id=sid,
                 score_mirror_offsets=stage_config.get("score_mirror_offsets"),
+                start_response=start_response,
+                **result_stat_kwargs,
             ),
-            login_resp=resp,
+            login_resp=resp if idx == 1 else None,
         )
 
     saved = _save_client_account(
@@ -3956,6 +4194,7 @@ def cmd_hd(args):
     from .battle_templates import load_scored_result
 
     event_type = args.type
+    result_stat_kwargs = _result_stat_override_kwargs(args)
     level_str = args.level
     times = args.times
     if times <= 0:
@@ -4001,6 +4240,7 @@ def cmd_hd(args):
     resp = client.login_login(first_login=False)
     _check(resp, "login/login")
     login_snapshot = _build_account_snapshot_from_login(client)
+    _surrender_login_resume_for_battle(client, resp, context=f"hd {event_type} {level}")
 
     for idx in range(1, times + 1):
         if times > 1:
@@ -4008,13 +4248,15 @@ def cmd_hd(args):
         _run_scored_dungeon(
             client,
             stage_id,
-            build_result_body=lambda sid: load_scored_result(
+            build_result_body=lambda sid, start_response: load_scored_result(
                 stage_master_id=stage_id,
                 score=score,
                 template_stage_id=template_id,
                 in_game_session_id=sid,
                 score_mirror_offsets=stage_config.get("score_mirror_offsets"),
                 template_file=stage_config.get("template_file"),
+                start_response=start_response,
+                **result_stat_kwargs,
             ),
             login_resp=resp if idx == 1 else None,
         )
@@ -4036,6 +4278,7 @@ def cmd_tz(args):
     from .battle_templates import load_battle_result
 
     zone = args.zone
+    result_stat_kwargs = _result_stat_override_kwargs(args)
     element = args.element
     times = args.times
     if times <= 0:
@@ -4080,6 +4323,7 @@ def cmd_tz(args):
     resp = client.login_login(first_login=False)
     _check(resp, "login/login")
     login_snapshot = _build_account_snapshot_from_login(client)
+    _surrender_login_resume_for_battle(client, resp, context=f"tz {zone} {element} {level}")
 
     for idx in range(1, times + 1):
         if times > 1:
@@ -4087,10 +4331,12 @@ def cmd_tz(args):
         _run_scored_dungeon(
             client,
             stage_id,
-            build_result_body=lambda sid: load_battle_result(
+            build_result_body=lambda sid, start_response: load_battle_result(
                 stage_master_id=stage_id,
                 template_stage_id=template_id,
                 in_game_session_id=sid,
+                start_response=start_response,
+                **result_stat_kwargs,
             ),
             login_resp=resp if idx == 1 else None,
         )
@@ -4120,6 +4366,7 @@ def _run_xl_command(
     from .battle_templates import load_battle_result
 
     client, record = _load_client_for_account(args)
+    result_stat_kwargs = _result_stat_override_kwargs(args)
     times = args.times
     if times <= 0:
         raise SystemExit("--times must be positive.")
@@ -4139,6 +4386,7 @@ def _run_xl_command(
     resp = client.login_login(first_login=False)
     _check(resp, "login/login")
     login_snapshot = _build_account_snapshot_from_login(client)
+    _surrender_login_resume_for_battle(client, resp, context=command_name)
 
     for idx in range(1, times + 1):
         print(f"\n=== XL run {idx}/{times} ===")
@@ -4157,11 +4405,13 @@ def _run_xl_command(
         print(f"\n=== in_game/result ({stage_id}) ===")
         resp = _submit_in_game_result_with_resume(
             client,
-            build_result_body=lambda sid: load_battle_result(
+            build_result_body=lambda sid, start_response: load_battle_result(
                 stage_master_id=stage_id,
                 template_stage_id=config["template_stage"],
                 in_game_session_id=sid,
                 template_file=config["template_file"],
+                start_response=start_response,
+                **result_stat_kwargs,
             ),
         )
         _check(resp, "in_game/result")
@@ -4213,6 +4463,7 @@ def cmd_juxiang(args):
 
     client, record = _load_client_for_account(args)
     score = args.score
+    result_stat_kwargs = _result_stat_override_kwargs(args)
 
     print(f"=== account {_account_ref(record)} ===")
     print(f"=== 巨像 (Colossus) — score={score} ===")
@@ -4230,9 +4481,10 @@ def cmd_juxiang(args):
     _run_scored_dungeon(
         client,
         _JUXIANG_STAGE_MASTER_ID,
-        build_result_body=lambda sid: load_juxiang_result(
+        build_result_body=lambda sid, start_response: load_juxiang_result(
             score=score,
             in_game_session_id=sid,
+            **result_stat_kwargs,
         ),
         login_resp=resp,
     )
@@ -4416,10 +4668,11 @@ def build_parser():
 
     battle_stage_parser = subparsers.add_parser(
         "battle-stage",
-        help="Fight a recorded stage; resume with InGameSessionId when present, otherwise start a new run",
+        help="Fight a recorded stage; surrender unfinished battle sessions before starting a new run",
     )
     battle_stage_parser.add_argument("--account", help="Saved account user_id, label, or latest")
     battle_stage_parser.add_argument("--stage", required=True, help="Recorded stage key such as 1-1, 1-2, 1-3, 1-4")
+    _add_result_stat_override_args(battle_stage_parser)
     battle_stage_parser.set_defaults(func=cmd_battle_stage)
 
     jq_parser = subparsers.add_parser(
@@ -4429,6 +4682,7 @@ def build_parser():
     jq_parser.add_argument("--account", help="Saved account user_id, label, or latest")
     jq_parser.add_argument("start_stage", help="Story stage key such as 2-1")
     jq_parser.add_argument("end_stage", nargs="?", help="Optional range end such as 2-10")
+    _add_result_stat_override_args(jq_parser)
     jq_parser.set_defaults(func=cmd_jq)
 
     jqh_parser = subparsers.add_parser(
@@ -4438,11 +4692,12 @@ def build_parser():
     jqh_parser.add_argument("--account", help="Saved account user_id, label, or latest")
     jqh_parser.add_argument("start_stage", help="Story stage key such as 2-1")
     jqh_parser.add_argument("end_stage", nargs="?", help="Optional range end such as 2-10")
+    _add_result_stat_override_args(jqh_parser)
     jqh_parser.set_defaults(func=cmd_jqh)
 
     jqhd_parser = subparsers.add_parser(
         "jqhd",
-        help="Run recorded event stages; e.g. jqhd 1-1, jqhd qd l 1, or jqhd xl 1",
+        help="Run recorded event stages; e.g. jqhd 1-1, jqhd qd l 1, jqhd xl 1, or jqhd st 1",
     )
     jqhd_parser.add_argument("--account", help="Saved account user_id, label, or latest")
     jqhd_parser.add_argument(
@@ -4450,9 +4705,10 @@ def build_parser():
         help="Score override for jqhd qd; defaults: 1=8001, 2=24000, 3=72000, 4=216000, 5=54001",
     )
     jqhd_parser.add_argument("--times", type=int, default=1, help="Repeat each jqhd stage this many times")
-    jqhd_parser.add_argument("start_stage", help="Event stage key such as 1-1, qd, or xl")
+    jqhd_parser.add_argument("start_stage", help="Event stage key such as 1-1, qd, xl, or st")
     jqhd_parser.add_argument("end_stage", nargs="?", help="Optional range end such as 1-10, qd type, or xl level")
     jqhd_parser.add_argument("extra_stage", nargs="?", help="qd level, e.g. jqhd qd l 1")
+    _add_result_stat_override_args(jqhd_parser)
     jqhd_parser.set_defaults(func=cmd_jqhd)
 
     collect_rewards_parser = subparsers.add_parser(
@@ -4505,6 +4761,7 @@ def build_parser():
         "--score", type=int, required=True,
         help="Damage score to submit for the battle result",
     )
+    _add_result_stat_override_args(juxiang_parser)
     juxiang_parser.set_defaults(func=cmd_juxiang)
 
     hd_parser = subparsers.add_parser(
@@ -4530,6 +4787,7 @@ def build_parser():
         "--score", type=int, default=None,
         help="Score to submit; defaults: qdjf 1=8000, 2=24000, 3=72000, 4=216000; jx=18000; xmss/shn=11000; cjmwmg 1=15651, 2=18443",
     )
+    _add_result_stat_override_args(hd_parser)
     hd_parser.set_defaults(func=cmd_hd)
 
     tz_parser = subparsers.add_parser(
@@ -4555,6 +4813,7 @@ def build_parser():
         choices=["1", "2"],
         help="Level; only used for st",
     )
+    _add_result_stat_override_args(tz_parser)
     tz_parser.set_defaults(func=cmd_tz)
 
     xl_parser = subparsers.add_parser(
@@ -4573,6 +4832,7 @@ def build_parser():
         default=1,
         help="Repeat count (default: 1)",
     )
+    _add_result_stat_override_args(xl_parser)
     xl_parser.set_defaults(func=cmd_xl)
 
     yc_parser = subparsers.add_parser(
@@ -4601,6 +4861,7 @@ def build_parser():
         "--times", type=int, default=1,
         help="Repeat count for battle mode (default: 1)",
     )
+    _add_result_stat_override_args(yc_parser)
     yc_parser.set_defaults(func=cmd_yc)
 
     return parser

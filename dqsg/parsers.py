@@ -284,6 +284,486 @@ def _read_list(r: BytesReader, read_item) -> list[dict]:
     return [read_item(r) for _ in range(r.read_int())]
 
 
+def _read_nullable_list(r: BytesReader, read_item):
+    if not r.read_bool():
+        return None
+    return [read_item(r) for _ in range(r.read_int())]
+
+
+def _read_time(r: BytesReader) -> int:
+    return r.read_long()
+
+
+def _read_nullable_time(r: BytesReader):
+    if not r.read_bool():
+        return None
+    return _read_time(r)
+
+
+def _read_localized_text(r: BytesReader) -> str:
+    return r.read_string()
+
+
+def _read_nullable_localized_text(r: BytesReader):
+    if not r.read_bool():
+        return None
+    return _read_localized_text(r)
+
+
+def _read_nullable_string(r: BytesReader):
+    if not r.read_bool():
+        return None
+    return r.read_string()
+
+
+def _read_user_enemy_kind(r: BytesReader) -> dict:
+    return {
+        "EnemyKindMasterId": r.read_int(),
+        "KillCount": r.read_long(),
+        "KilledAt": _read_time(r),
+        "ReceivedMaxKillIndex": r.read_int(),
+    }
+
+
+def _read_user_event_item(r: BytesReader) -> dict:
+    return {"EventItemMasterId": r.read_int(), "Amount": r.read_int()}
+
+
+def _read_user_event_point(r: BytesReader) -> dict:
+    return {"EventPointMasterId": r.read_int(), "Point": r.read_int()}
+
+
+def _read_user_growth_material(r: BytesReader) -> dict:
+    return {"GrowthMaterialMasterId": r.read_int(), "Amount": r.read_int()}
+
+
+def _read_user_orb(r: BytesReader) -> dict:
+    return {
+        "UserOrbId": r.read_long(),
+        "OrbMasterId": r.read_int(),
+        "Rank": r.read_int(),
+        "RankUpPoint": r.read_int(),
+        "IsLock": r.read_bool(),
+        "AcquiredAt": _read_time(r),
+    }
+
+
+def _read_user_stage(r: BytesReader) -> dict:
+    return {
+        "StageMasterId": r.read_int(),
+        "ClearCount": r.read_int(),
+        "MaxScore": r.read_nullable_int(),
+        "MaxClearRank": r.read_nullable_int(),
+        "LastPlayAt": _read_time(r),
+        "SkipDailyCount": r.read_int(),
+        "SkipResetAt": _read_time(r),
+    }
+
+
+def _read_user_style(r: BytesReader) -> dict:
+    return {
+        "StyleMasterId": r.read_int(),
+        "Level": r.read_int(),
+        "LevelExp": r.read_int(),
+    }
+
+
+def _read_user_status(r: BytesReader) -> dict:
+    return {
+        "Name": _read_nullable_localized_text(r),
+        "Message": _read_localized_text(r),
+        "Gold": r.read_int(),
+        "LastLoginAt": _read_time(r),
+        "ActionPointFullAt": _read_time(r),
+        "ActionPointBroken": r.read_int(),
+        "CurrentUsedDeckId": r.read_int(),
+        "RankExp": r.read_int(),
+        "LastReceivedRank": r.read_int(),
+        "InitialRecoveryAt": _read_time(r),
+        "ActionPointRecoverSnsCoinCount": r.read_int(),
+        "ActionPointRecoverSnsCoinNextResetAt": _read_time(r),
+        "LastPlayedAreaDifficulty": r.read_int(),
+        "LastPlayedNormalStageMasterId": r.read_nullable_int(),
+        "LastPlayedHardStageMasterId": r.read_nullable_int(),
+        "PearlPoint": r.read_int(),
+        "TutorialStep": r.read_int(),
+        "TermsOfUseVersion": r.read_nullable_int(),
+        "PrivacyPolicyVersion": r.read_nullable_int(),
+        "KoreaPrivacyConsentVersion": r.read_nullable_int(),
+        "AgreedTermsAt": _read_time(r),
+        "StoryOrbAlbumPoint": r.read_int(),
+        "EventOrbAlbumPoint": r.read_int(),
+        "StoryEnemyAlbumPoint": r.read_int(),
+        "EventEnemyAlbumPoint": r.read_int(),
+        "PointCardPoint": r.read_int(),
+        "EquipmentPoint": r.read_int(),
+        "LastGachaDrawAt": _read_time(r),
+        "IsUnderAge": r.read_nullable_bool(),
+        "CountryCode": _read_nullable_string(r),
+        "FcmToken": _read_nullable_string(r),
+        "IsPushNotificationEnable": r.read_nullable_bool(),
+        "IsAdchanceOrbEnable": r.read_bool(),
+        "IsAdchancePointCardPointEnable": r.read_bool(),
+        "CreateUserAt": _read_time(r),
+        "ProfileBackgroundMasterId": r.read_int(),
+        "ProfileEffectMasterId": r.read_nullable_int(),
+        "ProfileFrameMasterId": r.read_int(),
+        "ProfileAccoladeMasterId": r.read_int(),
+        "ProfilePoseMasterId": r.read_int(),
+        "ProfileFacialExpressionMasterId": r.read_int(),
+        "ProfileCameraPositionX": r.read_int(),
+        "ProfileCameraPositionY": r.read_int(),
+        "ProfileCameraSize": r.read_int(),
+        "ProfileCameraRotationY": r.read_int(),
+        "ProfileAppealRecordType1": r.read_int(),
+        "ProfileAppealRecordType2": r.read_int(),
+        "ProfileAppealRecordType3": r.read_int(),
+        "IsVisibleProfileAppealRecord": r.read_bool(),
+        "ProfileEquipmentSettingType": r.read_int(),
+        "IsPublishedProfile": r.read_bool(),
+        "LikeCount": r.read_int(),
+        "BirthMonthId": r.read_nullable_int(),
+        "IsDataTransferred": r.read_bool(),
+        "DailyAmountLimitAdExpansionCount": r.read_int(),
+        "DailyAmountLimitAdIntervalAt": _read_time(r),
+        "DailyAmountLimitResetAdExpansionCountAt": _read_time(r),
+        "DailyInGameContinueAdCount": r.read_int(),
+        "DailyInGameContinueAdCountResetAt": _read_time(r),
+        "AdRewardReceivedCount": r.read_int(),
+        "HasUserCaution": r.read_bool(),
+        "TotalDepositFreeSnsCoin": r.read_int(),
+        "TotalDepositBillingSnsCoin": r.read_int(),
+        "TotalConsumeFreeSnsCoin": r.read_int(),
+        "TotalConsumeBillingSnsCoin": r.read_int(),
+    }
+
+
+def _read_user_sns_coin(r: BytesReader):
+    if not r.read_bool():
+        return None
+    return {"FreeAmount": r.read_int(), "BillingAmount": r.read_int()}
+
+
+def _read_user_model_int_id(r: BytesReader, field_name: str) -> dict:
+    return {field_name: r.read_int()}
+
+
+def _read_user_model_list(r: BytesReader, read_item):
+    return [read_item(r) for _ in range(r.read_int())]
+
+
+_USER_MODEL_DIFF_LISTS = (
+    ("UserAccessoryUpdateList", None),
+    ("UserAccessoryDeleteList", "long"),
+    ("UserAccessoryUniqueUpdateList", None),
+    ("UserAccessoryUniqueDeleteList", "int"),
+    ("UserActionPointRecoverItemUpdateList", None),
+    ("UserActionPointRecoverItemDeleteList", "int"),
+    ("UserAdventureUpdateList", None),
+    ("UserAdventureDeleteList", "long"),
+    ("UserAmountLimitUpdateList", lambda r: {"AmountLimitType": r.read_int(), "ExpansionAmount": r.read_int()}),
+    ("UserAmountLimitDeleteList", "int"),
+    ("UserAreaAchievementUpdateList", lambda r: _read_user_model_int_id(r, "AreaAchievementMasterId")),
+    ("UserAreaAchievementDeleteList", "int"),
+    ("UserArmorUpdateList", lambda r: {
+        "UserArmorId": r.read_long(), "ArmorMasterId": r.read_int(), "Level": r.read_int(),
+        "LevelExp": r.read_int(), "LimitBreakStep": r.read_int(), "IsLock": r.read_bool(),
+        "AcquiredAt": _read_time(r),
+    }),
+    ("UserArmorDeleteList", "long"),
+    ("UserArmorUniqueUpdateList", lambda r: _read_user_model_int_id(r, "ArmorMasterId")),
+    ("UserArmorUniqueDeleteList", "int"),
+    ("UserAvatarUpdateList", None),
+    ("UserAvatarDeleteList", "int"),
+    ("UserDeckUpdateList", None),
+    ("UserDeckDeleteList", "int"),
+    ("UserEnemyAlbumPointRewardUpdateList", lambda r: _read_user_model_int_id(r, "EnemyAlbumPointRewardMasterId")),
+    ("UserEnemyAlbumPointRewardDeleteList", "int"),
+    ("UserEnemyKindUpdateList", _read_user_enemy_kind),
+    ("UserEnemyKindDeleteList", "int"),
+    ("UserEventGachaBoxUpdateList", None),
+    ("UserEventGachaBoxDeleteList", "int"),
+    ("UserEventHuntAreaUpdateList", lambda r: {"EventHuntAreaMasterId": r.read_int(), "IsReadTown": r.read_bool()}),
+    ("UserEventHuntAreaDeleteList", "int"),
+    ("UserEventHuntEffectUpdateList", lambda r: _read_user_model_int_id(r, "EventHuntEffectMasterId")),
+    ("UserEventHuntEffectDeleteList", "int"),
+    ("UserEventHuntEventFeatureIntroUpdateList", lambda r: _read_user_model_int_id(r, "EventHuntEventFeatureIntroMasterId")),
+    ("UserEventHuntEventFeatureIntroDeleteList", "int"),
+    ("UserEventHuntTownGimmickUpdateList", lambda r: _read_user_model_int_id(r, "EventHuntTownGimmickMasterId")),
+    ("UserEventHuntTownGimmickDeleteList", "int"),
+    ("UserEventItemUpdateList", _read_user_event_item),
+    ("UserEventItemDeleteList", "int"),
+    ("UserEventPickSkillUpdateList", lambda r: {
+        "EventPickSkillMasterId": r.read_int(), "Rank": r.read_int(), "AcquiredAt": _read_time(r),
+    }),
+    ("UserEventPickSkillDeleteList", "int"),
+    ("UserEventPointUpdateList", _read_user_event_point),
+    ("UserEventPointDeleteList", "int"),
+    ("UserEventPointRewardUpdateList", lambda r: _read_user_model_int_id(r, "EventPointRewardMasterId")),
+    ("UserEventPointRewardDeleteList", "int"),
+    ("UserEventSpecialEffectUpdateList", lambda r: {
+        "EventSpecialEffectMasterId": r.read_int(), "Rank": r.read_int(), "AcquiredAt": _read_time(r),
+    }),
+    ("UserEventSpecialEffectDeleteList", "int"),
+    ("UserEventSurvivalUpdateList", lambda r: {
+        "EventSurvivalMasterId": r.read_int(), "TotalScore": r.read_int(),
+        "TotalScoreUpdatedAt": _read_time(r), "IsReceivedRankingReward": r.read_bool(),
+    }),
+    ("UserEventSurvivalDeleteList", "int"),
+    ("UserEventSurvivalCasualScoreRewardUpdateList", lambda r: _read_user_model_int_id(r, "EventSurvivalCasualScoreRewardMasterId")),
+    ("UserEventSurvivalCasualScoreRewardDeleteList", "int"),
+    ("UserExpeditionAreaUpdateList", lambda r: _read_user_model_int_id(r, "ExpeditionAreaId")),
+    ("UserExpeditionAreaDeleteList", "int"),
+    ("UserExpeditionItemUpdateList", lambda r: {"UserExpeditionItemId": r.read_int(), "Amount": r.read_int()}),
+    ("UserExpeditionItemDeleteList", "int"),
+    ("UserExpeditionSlotUpdateList", lambda r: {
+        "SlotIndex": r.read_int(), "ExpeditionAreaId": r.read_int(), "IsExpedition": r.read_bool(),
+        "FinishAt": _read_time(r), "Level": r.read_int(),
+    }),
+    ("UserExpeditionSlotDeleteList", "int"),
+    ("UserFeatureIntroUpdateList", lambda r: _read_user_model_int_id(r, "FeatureIntroType")),
+    ("UserFeatureIntroDeleteList", "int"),
+    ("UserGachaAutoSellUpdateList", lambda r: _read_user_model_int_id(r, "SellType")),
+    ("UserGachaAutoSellDeleteList", "int"),
+    ("UserGachaDrawUpdateList", lambda r: {
+        "GachaDrawMasterId": r.read_int(), "DrawCount": r.read_int(),
+        "TotalDrawCount": r.read_int(), "DrawCountResetAt": _read_time(r),
+    }),
+    ("UserGachaDrawDeleteList", "int"),
+    ("UserGachaStampCardUpdateList", lambda r: {
+        "StampCardMasterId": r.read_int(), "Number": r.read_int(),
+        "RewardIndex": r.read_int(), "LoopCount": r.read_int(),
+    }),
+    ("UserGachaStampCardDeleteList", "int"),
+    ("UserGachaTicketUpdateList", lambda r: {"GachaTicketMasterId": r.read_int(), "Amount": r.read_int()}),
+    ("UserGachaTicketDeleteList", "int"),
+    ("UserGrowthMaterialUpdateList", _read_user_growth_material),
+    ("UserGrowthMaterialDeleteList", "int"),
+    ("UserImportantItemUpdateList", lambda r: {
+        "ImportantItemMasterId": r.read_int(), "IsReceivedReward": r.read_bool(), "AcquiredAt": _read_time(r),
+    }),
+    ("UserImportantItemDeleteList", "int"),
+    ("UserInfoTriggerEventSurvivalResultUpdateList", lambda r: {
+        "UserTriggerId": r.read_long(), "EventSurvivalMasterId": r.read_int(),
+        "Score": r.read_int(), "Rank": r.read_nullable_int(),
+    }),
+    ("UserInfoTriggerEventSurvivalResultDeleteList", "long"),
+    ("UserMainAreaUpdateList", lambda r: {
+        "AreaMasterId": r.read_int(), "IsReadedNormalUnlock": r.read_bool(),
+        "IsReadedHardUnlock": r.read_bool(), "IsReceivedImportantItemReward": r.read_bool(),
+    }),
+    ("UserMainAreaDeleteList", "int"),
+    ("UserMissionPanelUpdateList", lambda r: {"MissionPanelMasterId": r.read_int(), "CurrentStep": r.read_int()}),
+    ("UserMissionPanelDeleteList", "int"),
+    ("UserMissionPanelCellUpdateList", lambda r: {
+        "MissionPanelCellMasterId": r.read_int(), "StartCount": r.read_int(),
+        "ProgressCount": r.read_int(), "ClearedAt": _read_nullable_time(r),
+        "ReceivedRewardAt": _read_nullable_time(r),
+    }),
+    ("UserMissionPanelCellDeleteList", "int"),
+    ("UserMissionPanelStepUpdateList", lambda r: {
+        "MissionPanelStepMasterId": r.read_int(), "ClearedAt": _read_nullable_time(r),
+        "ReceivedRewardAt": _read_nullable_time(r),
+    }),
+    ("UserMissionPanelStepDeleteList", "int"),
+    ("UserNoticeUpdateList", lambda r: {"InformationId": r.read_int(), "LastReadAt": _read_time(r)}),
+    ("UserNoticeDeleteList", "int"),
+    ("UserOptionalTutorialUpdateList", lambda r: _read_user_model_int_id(r, "OptionalTutorialType")),
+    ("UserOptionalTutorialDeleteList", "int"),
+    ("UserOrbUpdateList", _read_user_orb),
+    ("UserOrbDeleteList", "long"),
+    ("UserOrbAlbumPointRewardUpdateList", lambda r: _read_user_model_int_id(r, "OrbAlbumRewardPointMasterId")),
+    ("UserOrbAlbumPointRewardDeleteList", "int"),
+    ("UserOrbUniqueUpdateList", lambda r: {
+        "OrbMasterId": r.read_int(), "MaxRank": r.read_int(),
+        "MaxReceivedRewardRank": r.read_nullable_int(), "AcquiredAt": _read_time(r),
+    }),
+    ("UserOrbUniqueDeleteList", "int"),
+    ("UserPearlUpdateList", lambda r: {
+        "UserPearlId": r.read_long(), "PearlMasterId": r.read_int(),
+        "ExtendedSpecialEffectMasterId": r.read_nullable_int(), "IsLock": r.read_bool(),
+        "AcquiredAt": _read_time(r),
+    }),
+    ("UserPearlDeleteList", "long"),
+    ("UserPearlGachaTicketUpdateList", lambda r: {"PearlGachaTicketMasterId": r.read_int(), "Amount": r.read_int()}),
+    ("UserPearlGachaTicketDeleteList", "int"),
+    ("UserPlayableGuideUpdateList", lambda r: _read_user_model_int_id(r, "PlayableGuideType")),
+    ("UserPlayableGuideDeleteList", "int"),
+    ("UserPointCardProductUpdateList", lambda r: {"PointCardProductMasterId": r.read_int(), "PurchaseCount": r.read_int()}),
+    ("UserPointCardProductDeleteList", "int"),
+    ("UserProfileAccoladeUpdateList", lambda r: {"ProfileAccoladeMasterId": r.read_int(), "AcquiredAt": _read_time(r)}),
+    ("UserProfileAccoladeDeleteList", "int"),
+    ("UserProfileBackgroundUpdateList", lambda r: {"ProfileBackgroundMasterId": r.read_int(), "AcquiredAt": _read_time(r)}),
+    ("UserProfileBackgroundDeleteList", "int"),
+    ("UserProfileEffectUpdateList", lambda r: {"ProfileEffectMasterId": r.read_int(), "AcquiredAt": _read_time(r)}),
+    ("UserProfileEffectDeleteList", "int"),
+    ("UserProfileFacialExpressionUpdateList", lambda r: {"ProfileFacialExpressionMasterId": r.read_int(), "AcquiredAt": _read_time(r)}),
+    ("UserProfileFacialExpressionDeleteList", "int"),
+    ("UserProfileFrameUpdateList", lambda r: {"ProfileFrameMasterId": r.read_int(), "AcquiredAt": _read_time(r)}),
+    ("UserProfileFrameDeleteList", "int"),
+    ("UserProfilePoseUpdateList", lambda r: {"ProfilePoseMasterId": r.read_int(), "AcquiredAt": _read_time(r)}),
+    ("UserProfilePoseDeleteList", "int"),
+    ("UserReleaseFunctionUpdateList", lambda r: {"ReleaseFunctionType": r.read_int(), "IsLock": r.read_bool()}),
+    ("UserReleaseFunctionDeleteList", "int"),
+    ("UserShopExchangeContentUpdateList", lambda r: {
+        "ShopExchangeContentMasterId": r.read_int(), "ExchangeCount": r.read_int(),
+        "TotalExchangeCount": r.read_int(), "LastExchangeAt": _read_time(r),
+    }),
+    ("UserShopExchangeContentDeleteList", "int"),
+    ("UserStageUpdateList", _read_user_stage),
+    ("UserStageDeleteList", "int"),
+    ("UserStageAchievementUpdateList", lambda r: _read_user_model_int_id(r, "StageAchievementMasterId")),
+    ("UserStageAchievementDeleteList", "int"),
+    ("UserStageEnemyUpdateList", lambda r: {"UserStageEnemyId": r.read_long()}),
+    ("UserStageEnemyDeleteList", "long"),
+    ("UserStagePeriodUpdateList", lambda r: {
+        "StageMasterId": r.read_int(), "PlayCount": r.read_int(), "LastPlayAt": _read_time(r),
+    }),
+    ("UserStagePeriodDeleteList", "int"),
+    ("UserStageTicketUpdateList", lambda r: {
+        "StageTicketMasterId": r.read_int(), "Amount": r.read_int(), "RecoveryAt": _read_nullable_time(r),
+    }),
+    ("UserStageTicketDeleteList", "int"),
+)
+
+
+def _read_user_model_diff(r: BytesReader) -> dict:
+    result = {}
+    for name, reader in _USER_MODEL_DIFF_LISTS:
+        if reader == "int":
+            result[name] = _read_user_model_list(r, lambda rr: rr.read_int())
+        elif reader == "long":
+            result[name] = _read_user_model_list(r, lambda rr: rr.read_long())
+        elif reader is None:
+            count = r.read_int()
+            if count:
+                raise ValueError(f"unsupported non-empty UserModelDiff list: {name} count={count}")
+            result[name] = []
+        else:
+            result[name] = _read_user_model_list(r, reader)
+    result["UserStatus"] = _read_user_status(r)
+    result["UserStoreReviewUpdateList"] = _read_user_model_list(r, lambda rr: {
+        "TriggerId": rr.read_int(), "TriggerType": rr.read_int(), "TriggerAt": _read_time(rr),
+        "RespondedAt": _read_nullable_time(rr), "IsReviewed": rr.read_nullable_bool(),
+    })
+    result["UserStoreReviewDeleteList"] = _read_user_model_list(r, lambda rr: rr.read_int())
+    result["UserStyleUpdateList"] = _read_user_model_list(r, _read_user_style)
+    result["UserStyleDeleteList"] = _read_user_model_list(r, lambda rr: rr.read_int())
+    result["UserStylePanelUpdateList"] = _read_user_model_list(r, lambda rr: {
+        "StylePanelMasterId": rr.read_int(), "Level": rr.read_int(),
+    })
+    result["UserStylePanelDeleteList"] = _read_user_model_list(r, lambda rr: rr.read_int())
+    result["UserStylePanelOrbUpdateList"] = _read_user_model_list(r, lambda rr: {
+        "UserStylePanelOrbId": rr.read_long(), "UserOrbId": rr.read_long(), "OrbIndex": rr.read_int(),
+    })
+    result["UserStylePanelOrbDeleteList"] = _read_user_model_list(r, lambda rr: rr.read_long())
+    result["UserWeaponUpdateList"] = _read_user_model_list(r, lambda rr: {
+        "UserWeaponId": rr.read_long(), "WeaponMasterId": rr.read_int(), "Level": rr.read_int(),
+        "LevelExp": rr.read_int(), "LimitBreakStep": rr.read_int(), "IsLock": rr.read_bool(),
+        "AcquiredAt": _read_time(rr),
+    })
+    result["UserWeaponDeleteList"] = _read_user_model_list(r, lambda rr: rr.read_long())
+    result["UserWeaponUniqueUpdateList"] = _read_user_model_list(r, lambda rr: _read_user_model_int_id(rr, "WeaponMasterId"))
+    result["UserWeaponUniqueDeleteList"] = _read_user_model_list(r, lambda rr: rr.read_int())
+    result["UserSnsCoin"] = _read_user_sns_coin(r)
+    return result
+
+
+def _read_in_game_drop_content(r: BytesReader) -> dict:
+    return {
+        "ContentType": r.read_nullable_int(),
+        "ContentMasterId": r.read_nullable_int(),
+        "ContentAmount": r.read_nullable_int(),
+        "TreasureBoxRarity": r.read_nullable_int(),
+    }
+
+
+def _read_in_game_block_node(r: BytesReader) -> dict:
+    return {
+        "UniqueId": r.read_int(),
+        "BlockMasterId": r.read_long(),
+        "Depth": r.read_int(),
+        "SubStageMasterId": r.read_long(),
+    }
+
+
+def _read_in_game_gimmick_placement(r: BytesReader) -> dict:
+    return {"GimmickPlacementId": r.read_long()}
+
+
+def _read_in_game_gimmick_treasure_box(r: BytesReader) -> dict:
+    return {
+        "GimmickPlacementId": r.read_long(),
+        "DropContent": _read_in_game_drop_content(r),
+    }
+
+
+def _read_in_game_gimmick_skill_presenter(r: BytesReader) -> dict:
+    return {
+        "GimmickPlacementId": r.read_long(),
+        "SkillPresenterId": r.read_int(),
+    }
+
+
+def _read_in_game_gimmick_enemy_spawner_mimic(r: BytesReader) -> dict:
+    return {
+        "GimmickPlacementId": r.read_long(),
+        "DropContentList": _read_list(r, _read_in_game_drop_content),
+    }
+
+
+def _read_in_game_gimmick_roulette(r: BytesReader) -> dict:
+    return {
+        "GimmickPlacementId": r.read_long(),
+        "LotCellIndex": r.read_int(),
+        "DropContent": _read_in_game_drop_content(r),
+        "LotRate": r.read_nullable_int(),
+    }
+
+
+def _read_in_game_block_clear_reward(r: BytesReader) -> dict:
+    return {
+        "BlockMasterId": r.read_long(),
+        "DropContentList": _read_list(r, _read_in_game_drop_content),
+    }
+
+
+def _read_in_game_enemy_drop(r: BytesReader) -> dict:
+    return {
+        "BlockId": r.read_nullable_long(),
+        "TeamId": r.read_long(),
+        "GroupIdx": r.read_int(),
+        "DropContentList": _read_list(r, _read_in_game_drop_content),
+    }
+
+
+def _read_in_game_fixed_stage_lot(r: BytesReader) -> dict:
+    return {
+        "BlockNodeList": _read_list(r, _read_in_game_block_node),
+        "GimmickPlacementList": _read_list(r, _read_in_game_gimmick_placement),
+        "GimmickTreasureBoxList": _read_list(r, _read_in_game_gimmick_treasure_box),
+        "GimmickSkillPresenterList": _read_list(r, _read_in_game_gimmick_skill_presenter),
+        "GimmickEnemySpawnerMimicList": _read_list(r, _read_in_game_gimmick_enemy_spawner_mimic),
+        "GimmickRouletteList": _read_list(r, _read_in_game_gimmick_roulette),
+        "BlockClearRewardList": _read_list(r, _read_in_game_block_clear_reward),
+        "EnemyDropList": _read_list(r, _read_in_game_enemy_drop),
+    }
+
+
+def parse_in_game_start_response(data: bytes) -> dict:
+    r = BytesReader(data)
+    result = {"_status": r.read_int()}
+    if result["_status"] != 1:
+        result["_remaining"] = r.remaining()
+        return result
+    result["FixedStageLot"] = _read_in_game_fixed_stage_lot(r)
+    result["PerformanceMetricsEnabled"] = r.read_bool()
+    result["SessionId"] = r.read_long()
+    result["InGameRandomSeed"] = r.read_long()
+    result["_UserModelDiff_remaining"] = r.remaining()
+    return result
+
+
 def _read_stage_result_event_survival(r: BytesReader) -> dict:
     return {
         "BeforeRank": r.read_nullable_int(),
@@ -312,11 +792,20 @@ def _read_stage_result(r: BytesReader) -> dict:
 
 
 def parse_in_game_result_response(data: bytes) -> dict:
-    """Parse InGameResultResponse enough to detect ad chance rewards."""
+    """Parse InGameResultResponse, including UserModelDiff reward/account changes."""
     r = BytesReader(data)
     result = {"_status": r.read_int()}
     result["StageResult"] = _read_stage_result(r)
     result["_remaining_after_stage_result"] = r.remaining()
+    try:
+        result["CanLikeUserIdList"] = _read_nullable_list(r, lambda rr: rr.read_long())
+        result["UserModelDiff"] = _read_user_model_diff(r)
+        result["UpdatedAt"] = _read_time(r) if r.remaining() >= 8 else None
+        result["MasterDataVersion"] = r.read_string() if r.remaining() >= 4 else None
+        result["_remaining_after_user_model_diff"] = r.remaining()
+    except Exception as exc:
+        result["_user_model_diff_parse_error"] = f"{type(exc).__name__}: {exc}"
+        result["_user_model_diff_remaining"] = r.remaining()
     return result
 
 
@@ -498,9 +987,28 @@ def build_in_game_start_request(stage_master_id: int, deck_index: int = 1,
     return w.to_bytes()
 
 
+def build_in_game_surrender_request(in_game_session_id: int, reason: int = 2) -> bytes:
+    """Surrender an unfinished battle session.
+
+    Captured client payload shape is:
+      int64 InGameSessionId, int32 reason, raw UTF-8 JSON object "{}".
+    """
+    w = BytesWriter()
+    w.write_long(in_game_session_id)
+    w.write_int(reason)
+    w.buf.extend(b"{}")
+    return w.to_bytes()
+
+
 def build_in_game_result_request(stage_master_id: int = None,
                                   template_stage_id: int = None,
                                   in_game_session_id: int = None,
+                                  in_game_start_response: dict = None,
+                                  dynamic_rewards: bool = True,
+                                  damage_taken: int = None,
+                                  damage_taken_count: int = None,
+                                  dead_count: int = None,
+                                  clear_time: int = None,
                                   raw_body: bytes = None) -> bytes:
     """Submit battle result.
 
@@ -512,7 +1020,17 @@ def build_in_game_result_request(stage_master_id: int = None,
         return raw_body
     if stage_master_id is not None:
         from .battle_templates import load_battle_result
-        return load_battle_result(stage_master_id, template_stage_id, in_game_session_id)
+        return load_battle_result(
+            stage_master_id,
+            template_stage_id,
+            in_game_session_id,
+            start_response=in_game_start_response,
+            dynamic_rewards=dynamic_rewards,
+            damage_taken=damage_taken,
+            damage_taken_count=damage_taken_count,
+            dead_count=dead_count,
+            clear_time=clear_time,
+        )
     raise ValueError("Must provide either raw_body or stage_master_id")
 
 

@@ -25,7 +25,9 @@ from .parsers import (
     build_save_avatar_request,
     build_metric_adventure_skip_request, build_metric_tutorial_request,
     build_metric_low_fps_request, build_metric_device_request,
-    build_in_game_start_request, build_in_game_result_request,
+    build_in_game_start_request, build_in_game_surrender_request,
+    build_in_game_result_request,
+    parse_in_game_start_response,
     parse_in_game_result_response,
     parse_in_game_stage_skip_response,
     build_gacha_draw_request, parse_gacha_draw_response,
@@ -116,6 +118,100 @@ def _request_param_text(plaintext: bytes) -> str:
     if len(plaintext) <= 16:
         return plaintext.hex()
     return f"<{len(plaintext)} bytes>"
+
+
+def _print_stage_result_rewards(stage_result: dict):
+    gold = stage_result.get("Gold")
+    style_exp = stage_result.get("StyleExp")
+    print(f"  BattleReward: gold={gold}, style_exp={style_exp}")
+
+    entries = stage_result.get("ResultContentList") or []
+    parts = []
+    for entry in entries:
+        fields = []
+        content_type = entry.get("ContentType")
+        content_master_id = entry.get("ContentMasterId")
+        content_amount = entry.get("ContentAmount")
+        if content_type is not None:
+            fields.append(f"type={content_type}")
+        if content_master_id is not None:
+            fields.append(f"master={content_master_id}")
+        if content_amount is not None:
+            fields.append(f"amount={content_amount}")
+        if fields:
+            parts.append(", ".join(fields))
+    print(f"  ResultContent: {'; '.join(parts) if parts else '-'}")
+
+
+def _print_user_model_diff(user_model_diff: dict | None):
+    if not user_model_diff:
+        return
+
+    def _print_dict(label: str, entry: dict, fields: tuple[str, ...]):
+        parts = []
+        for field in fields:
+            value = entry.get(field)
+            if value is not None and value != "":
+                parts.append(f"{field}={value}")
+        if parts:
+            print(f"    {label}: " + ", ".join(parts))
+
+    def _print_list(label: str, entries: list[dict]):
+        if not entries:
+            return
+        print(f"    {label}: count={len(entries)}")
+        for entry in entries[:20]:
+            if isinstance(entry, dict):
+                parts = []
+                for key, value in entry.items():
+                    if key == "FcmToken":
+                        continue
+                    if value is not None and value != "":
+                        parts.append(f"{key}={value}")
+                print("      - " + ", ".join(parts))
+            else:
+                print(f"      - {entry}")
+        if len(entries) > 20:
+            print(f"      ... {len(entries) - 20} more")
+
+    printed = False
+    for key, value in user_model_diff.items():
+        if key in {"UserStatus", "UserSnsCoin"}:
+            continue
+        if isinstance(value, list) and value:
+            if not printed:
+                print("  UserModelDiff:")
+                printed = True
+            _print_list(key, value)
+
+    status = user_model_diff.get("UserStatus")
+    if status:
+        if not printed:
+            print("  UserModelDiff:")
+            printed = True
+        _print_dict(
+            "UserStatus",
+            status,
+            (
+                "Gold",
+                "RankExp",
+                "PearlPoint",
+                "PointCardPoint",
+                "EquipmentPoint",
+                "StoryOrbAlbumPoint",
+                "EventOrbAlbumPoint",
+                "StoryEnemyAlbumPoint",
+                "EventEnemyAlbumPoint",
+                "LastPlayedNormalStageMasterId",
+                "LastPlayedHardStageMasterId",
+            ),
+        )
+
+    sns_coin = user_model_diff.get("UserSnsCoin")
+    if sns_coin:
+        if not printed:
+            print("  UserModelDiff:")
+        _print_dict("UserSnsCoin", sns_coin, ("FreeAmount", "BillingAmount"))
 
 
 def _normalize_proxy_url(proxy_url: str) -> str:
@@ -593,7 +689,25 @@ class DQSGClient:
             return "sessionKey"
         return "key"
 
-    def _debug_request_details(self, path: str, url: str, key: bytes, plaintext: bytes, encrypted: bytes):
+    def _effective_request_proxy(self, url: str) -> str | None:
+        try:
+            settings = self.session.merge_environment_settings(url, {}, None, None, None)
+            proxies = settings.get("proxies") or {}
+            return requests.utils.select_proxy(url, proxies)
+        except Exception as exc:
+            self.debug_log(f"  -> actual proxy lookup failed: {type(exc).__name__}: {exc}")
+            return None
+
+    def _request_proxy_text(self, url: str) -> str:
+        actual_proxy = self._effective_request_proxy(url)
+        if not actual_proxy:
+            return "-"
+        text = _redact_proxy_url(actual_proxy)
+        if self.proxy_url and actual_proxy != self.proxy_url:
+            text += f" (session={_redact_proxy_url(self.proxy_url)})"
+        return text
+
+    def _debug_request_details(self, path: str, url: str, key: bytes, plaintext: bytes, encrypted: bytes, actual_proxy: str):
         if not self.debug:
             return
         print(f"  -> path: {path}")
@@ -601,6 +715,7 @@ class DQSGClient:
         print(f"  -> user-agent: {_DEFAULT_HEADERS['user-agent']}")
         if self.proxy_url:
             print(f"  -> proxy: {_redact_proxy_url(self.proxy_url)}")
+        print(f"  -> actual proxy: {actual_proxy}")
         print(f"  -> {self._key_debug_label(key)} ({len(key)} bytes) = {key.hex()}")
         print(f"  -> plaintext ({len(plaintext)} bytes) = {plaintext.hex() if plaintext else '-'}")
         print(f"  -> encrypted ({len(encrypted)} bytes) = {encrypted.hex()}")
@@ -628,8 +743,9 @@ class DQSGClient:
         path = self._build_path(endpoint, with_user=with_user, with_time=with_time)
         url = BASE_URL + path
         encrypted = encrypt_request(key, path, plaintext)
-        self._debug_request_details(path, url, key, plaintext, encrypted)
-        line = f"=== /{endpoint} {_request_param_text(plaintext)}"
+        actual_proxy = self._request_proxy_text(url)
+        self._debug_request_details(path, url, key, plaintext, encrypted, actual_proxy)
+        line = f"=== /{endpoint} {_request_param_text(plaintext)} proxy:{actual_proxy}"
 
         # Save decrypted request body
         safe_endpoint = endpoint.replace("/", "_")
@@ -921,31 +1037,73 @@ class DQSGClient:
     # Battle (in_game/start, in_game/result)
     # ------------------------------------------------------------------
 
+    def _sleep_after_in_game_start(self):
+        self.debug_log("  -> sleeping 10s after in_game/start")
+        time.sleep(10)
+
     def in_game_start(self, stage_master_id: int, deck_index: int = 1,
                       friend_style_id: int = None):
         req = build_in_game_start_request(stage_master_id, deck_index, friend_style_id)
         data = self.call_authenticated("in_game/start", req)
-        resp = parse_user_model_response(data)
-        self.debug_log(f"  <- {_status_text(resp['_status'])}")
+        resp = parse_in_game_start_response(data)
+        resp["_stage_master_id"] = stage_master_id
+        self.last_in_game_start_response = resp
+        self.debug_log(f"  <- {_status_text(resp['_status'])}, SessionId={resp.get('SessionId')}")
+        if resp.get("_status") == 1:
+            self._sleep_after_in_game_start()
         return resp
 
     def in_game_start_raw(self, raw_body: bytes):
         data = self.call_authenticated("in_game/start", raw_body)
+        resp = parse_in_game_start_response(data)
+        self.last_in_game_start_response = resp
+        self.debug_log(f"  <- {_status_text(resp['_status'])}, SessionId={resp.get('SessionId')}")
+        if resp.get("_status") == 1:
+            self._sleep_after_in_game_start()
+        return resp
+
+    def in_game_surrender(self, in_game_session_id: int, reason: int = 2):
+        req = build_in_game_surrender_request(in_game_session_id, reason=reason)
+        data = self.call_authenticated("in_game/surrender", req)
         resp = parse_user_model_response(data)
+        self.last_in_game_start_response = None
         self.debug_log(f"  <- {_status_text(resp['_status'])}")
         return resp
 
     def in_game_result(self, stage_master_id: int = None,
                        template_stage_id: int = None,
                        in_game_session_id: int = None,
+                       dynamic_rewards: bool = True,
+                       damage_taken: int = None,
+                       damage_taken_count: int = None,
+                       dead_count: int = None,
+                       clear_time: int = None,
                        raw_body: bytes = None):
+        start_response = None
+        if raw_body is None:
+            candidate = getattr(self, "last_in_game_start_response", None)
+            if candidate is not None:
+                candidate_stage_id = candidate.get("_stage_master_id")
+                if stage_master_id is None or candidate_stage_id in (None, stage_master_id):
+                    start_response = candidate
         req = build_in_game_result_request(stage_master_id=stage_master_id,
                                            template_stage_id=template_stage_id,
                                            in_game_session_id=in_game_session_id,
+                                           in_game_start_response=start_response,
+                                           dynamic_rewards=dynamic_rewards,
+                                           damage_taken=damage_taken,
+                                           damage_taken_count=damage_taken_count,
+                                           dead_count=dead_count,
+                                           clear_time=clear_time,
                                            raw_body=raw_body)
         data = self.call_authenticated("in_game/result", req)
         resp = parse_in_game_result_response(data)
         self.debug_log(f"  <- {_status_text(resp['_status'])}")
+        stage_result = resp.get("StageResult")
+        if stage_result:
+            _print_stage_result_rewards(stage_result)
+        for stage_result in resp.get("StageResultList") or []:
+            _print_stage_result_rewards(stage_result)
         return resp
 
     def in_game_skip_stage(self, stage_master_id: int, count: int = 3):
